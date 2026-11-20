@@ -649,12 +649,18 @@ n>
 
 <section id="allotmentData" class="card">
  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-  <div><h2 style="margin:0;color:#075293">🗂️ Room Allotment Dashboard</h2><p class="note">Participant-wise allotment and live room occupancy will be displayed here inside AawasSetu.</p></div>
-  <span style="background:#fff4db;color:#92400e;padding:8px 12px;border-radius:20px;font-weight:800">BACKEND CONNECTION PENDING</span>
+  <div><h2 style="margin:0;color:#075293">🗂️ Room Allotment Dashboard</h2><p class="note">AawasSetu private database connection and live room-management status.</p></div>
+  <span id="awaasBackendBadge" style="background:#fff4db;color:#92400e;padding:8px 12px;border-radius:20px;font-weight:800">CHECKING BACKEND…</span>
  </div>
  <div class="section blue" style="margin-top:14px">
   <h3 style="margin:0 0 8px">🔐 Administrator Access</h3>
-  <p class="note">The secure Admin PIN is not yet connected. No PIN is stored in this public website. The Admin Dashboard will open only after server-side verification is installed in the Google Apps Script backend.</p>
+  <p class="note" id="awaasAdminMessage">Backend health check is in progress. Administrator sign-in will be enabled after the connection is verified.</p>
+  <div id="awaasAdminControls" style="display:none;max-width:520px">
+   <label for="awaasAdminPin">Administrator PIN</label>
+   <input id="awaasAdminPin" type="password" autocomplete="current-password" placeholder="Enter private administrator PIN">
+   <button class="primary-btn" id="awaasAdminLogin" type="button" style="margin-top:10px">Sign in</button>
+   <p class="note" id="awaasAdminStatus" aria-live="polite"></p>
+  </div>
  </div>
  <div class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
   <div class="stat"><b>105</b><span>Allotable Beds</span></div>
@@ -663,8 +669,8 @@ n>
   <div class="stat"><b>12</b><span>Floors</span></div>
  </div>
  <div class="section orange">
-  <strong>Live allotment is not connected yet.</strong>
-  <p class="note" style="margin-bottom:0">This dashboard intentionally does not accept Excel uploads or display fabricated occupancy. Once the private Apps Script admin functions are added, actual participant allotments, room occupancy, verification records and manual changes will appear here directly.</p>
+  <strong id="awaasLiveTitle">Live allotment is not connected yet.</strong>
+  <p class="note" id="awaasLiveMessage" style="margin-bottom:0">The database service is being checked. Actual allotment and occupancy will appear only after the admin workflow is connected and participant records are entered.</p>
  </div>
  <p class="note">Capacity: A1, A2 and A3; Ground, First, Second and Third floors; 3 rooms per floor; 3 beds per room. A1 Ground Floor Room 1 is Store Room cum Guard Room and is excluded. All payments are at the ZIET Office only.</p>
 </section>
@@ -2490,6 +2496,36 @@ function checkPaymentScreenshotStatus(requestId) {
   }catch(e){book=null;tables={};summary.innerHTML='';priority.style.display='none';status.textContent='Could not load workbook: '+e.message;}
  });
  view.addEventListener('change',render); search.addEventListener('input',render);
+})();
+</script>
+
+<script>
+// AawasSetu backend health check. Separate from the existing workshop/course API.
+const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOptlqcB7ZUXX5q3lia-rfw2lEhzBTcdV0cYMiVXo97EdAKGBKct3mSY8YB_f/exec";
+(function(){
+  const badge=document.getElementById('awaasBackendBadge');
+  if(!badge) return;
+  let finished=false;
+  const callbackName='awaasHealthCallback';
+  window[callbackName]=function(data){
+    finished=true;
+    const ok=!!(data && data.success && data.databaseConnected);
+    badge.textContent=ok?'BACKEND CONNECTED':'BACKEND NOT READY';
+    badge.style.background=ok?'#e8f8ee':'#fff4db';
+    badge.style.color=ok?'#13763b':'#92400e';
+    document.getElementById('awaasAdminMessage').textContent=ok
+      ?'AawasSetu database is reachable. Administrator authentication is available through the backend; the management interface is being connected in the next stage.'
+      :'Backend responded, but the database is not initialized. Run setupAawasSetu() in Apps Script.';
+    document.getElementById('awaasLiveTitle').textContent=ok?'Database connected; allotment engine pending.':'Live allotment is not connected yet.';
+    document.getElementById('awaasLiveMessage').textContent=ok
+      ?'The separate AawasSetu Master Database is reachable. Participant import, rule-based room allocation, live occupancy and admin controls are not yet activated.'
+      :'The database service could not confirm readiness. Check the Apps Script deployment and database setup.';
+  };
+  const script=document.createElement('script');
+  script.src=AWAASSETU_BACKEND_URL+'?action=health&callback='+callbackName+'&_='+Date.now();
+  script.onerror=function(){ if(!finished){badge.textContent='BACKEND CONNECTION FAILED';badge.style.background='#fee2e2';badge.style.color='#991b1b';document.getElementById('awaasAdminMessage').textContent='Could not reach the Apps Script Web App. Check deployment access settings and URL.';} };
+  document.head.appendChild(script);
+  setTimeout(function(){if(!finished && badge.textContent==='CHECKING BACKEND…'){badge.textContent='BACKEND CHECK TIMED OUT';badge.style.background='#fee2e2';badge.style.color='#991b1b';document.getElementById('awaasAdminMessage').textContent='No response from the Apps Script Web App. Check that the deployment is accessible to anyone.';}},12000);
 })();
 </script>
 </body>
