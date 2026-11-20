@@ -132,6 +132,7 @@ button.action{border:0;border-radius:11px;padding:13px 19px;font-size:15px;font-
     <button class="tab" type="button" onclick="focusSection('participant',this)">👤 Participant / Room Details</button>
     <button class="tab" type="button" onclick="focusSection('details',this)">ℹ️ KV Details</button>
     <button class="tab" type="button" onclick="focusSection('payment',this)">💳 Payment</button>
+    <button class="tab" type="button" onclick="focusSection('allotmentData',this)">🗂️ Room Allotment</button>
   </div>
 
   <form id="form" class="card">
@@ -643,7 +644,37 @@ n>
       <div id="status" class="status"></div>
     </section>
   </form>
-<section class="card" style="margin-top:18px"><h2 style="color:#075293;margin-top:0">AawasSetu • Accommodation Preferences</h2><p class="note">Allotment preferences recorded for the management workflow: Resource Persons / Associates are prioritised for separate single rooms when available; women participants receive preference in A1 (not an absolute restriction); differently abled and senior participants receive priority for ground-floor rooms; same-school participants are grouped together where feasible, followed by same-region grouping. Age-based allocation is subject to verified date of birth.</p></section>\n</main>
+<section class="card" style="margin-top:18px"><h2 style="color:#075293;margin-top:0">AawasSetu • Accommodation Preferences</h2><p class="note">Allotment preferences recorded for the management workflow: Resource Persons / Associates are prioritised for separate single rooms when available; women participants receive preference in A1 (not an absolute restriction); differently abled and senior participants receive priority for ground-floor rooms; same-school participants are grouped together where feasible, followed by same-region grouping. Age-based allocation is subject to verified date of birth.</p></section>\n
+<section id="allotmentData" class="card">
+ <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <div><h2 style="margin:0;color:#075293">🗂️ Room Allotment Workspace</h2><p class="note">Load the provisional allotment workbook here to view participant-wise rooms, room occupancy and entries needing verification.</p></div>
+  <span style="background:#fff4db;color:#92400e;padding:8px 12px;border-radius:20px;font-weight:800">PROVISIONAL DATA</span>
+ </div>
+ <div class="section blue" style="margin-top:14px">
+  <label for="allotmentWorkbook">📁 Select ZIET AawasSetu Provisional Room Allotment Excel</label>
+  <input id="allotmentWorkbook" type="file" accept=".xlsx,.xls" />
+  <p class="note">Choose the file named “ZIET_AawasSetu_Provisional_Room_Allotment.xlsx”. The workbook is processed in your browser; it is not uploaded to a server.</p>
+  <div id="allotmentLoadStatus" class="note" role="status">No workbook loaded yet.</div>
+ </div>
+ <div id="allotmentSummary" class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"></div>
+ <div id="manishaPriority" class="section green" style="display:none">
+  <strong>♿ Priority placement — Manisha Vivek Mahajan</strong>
+  <div style="font-size:22px;font-weight:900;color:#075293;margin-top:6px">A1 · Ground Floor · Room 2 · Single</div>
+  <div class="note">Provisional placement, subject to room availability and final verification.</div>
+ </div>
+ <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0">
+  <input id="allotmentSearch" type="search" placeholder="Search name, school, region or room..." style="flex:1;min-width:220px" />
+  <select id="allotmentView" style="width:auto;min-width:190px"><option value="Room Allotment">Participant-wise Allotment</option><option value="Room Occupancy">Room Occupancy</option><option value="Verification Required">Verification Required</option></select>
+  <button class="action reset" type="button" onclick="window.print()">🖨️ Print</button>
+ </div>
+ <div style="overflow:auto;border:1px solid #dbe7f0;border-radius:12px">
+  <table id="allotmentTable" style="width:100%;border-collapse:collapse;min-width:900px;background:#fff">
+   <thead><tr><th style="padding:10px;background:#075293;color:#fff;text-align:left">Load workbook to view allotment</th></tr></thead><tbody></tbody>
+  </table>
+ </div>
+ <p class="note" style="margin-top:12px">All payments must be made at the ZIET Office only. Room 1, A1 Ground Floor, remains reserved as Store Room cum Guard Room.</p>
+</section>
+</main>
 
 <footer class="footer">
   ZIET Mumbai • AawasSetu • Smart Stay & Room Allotment Platform
@@ -2422,5 +2453,50 @@ function checkPaymentScreenshotStatus(requestId) {
     }
   );
 
-})();</script></body>
+})();</script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+(function(){
+ let book=null, tables={};
+ const file=document.getElementById('allotmentWorkbook');
+ const status=document.getElementById('allotmentLoadStatus');
+ const view=document.getElementById('allotmentView');
+ const search=document.getElementById('allotmentSearch');
+ const table=document.getElementById('allotmentTable');
+ const summary=document.getElementById('allotmentSummary');
+ const priority=document.getElementById('manishaPriority');
+ function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+ function render(){
+  if(!book)return;
+  const name=view.value, rows=(tables[name]||[]), q=(search.value||'').toLowerCase();
+  const filtered=rows.filter(r=>Object.values(r).join(' ').toLowerCase().includes(q));
+  const cols=rows.length?Object.keys(rows[0]):[];
+  table.innerHTML='<thead><tr>'+cols.map(c=>'<th style="padding:10px;background:#075293;color:white;text-align:left;white-space:nowrap">'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+   filtered.map(r=>'<tr>'+cols.map(c=>'<td style="padding:9px;border-bottom:1px solid #e5edf4;vertical-align:top">'+esc(r[c])+'</td>').join('')+'</tr>').join('')+'</tbody>';
+  if(!filtered.length)table.querySelector('tbody').innerHTML='<tr><td colspan="'+Math.max(cols.length,1)+'" style="padding:16px">No matching records.</td></tr>';
+ }
+ file.addEventListener('change',async function(){
+  const f=file.files&&file.files[0]; if(!f)return;
+  if(!window.XLSX){status.textContent='Excel reader could not load. Please refresh and try again.';return;}
+  try{
+   const data=await f.arrayBuffer(); book=XLSX.read(data,{type:'array'});
+   tables={};
+   ['Room Allotment','Room Occupancy','Verification Required'].forEach(n=>{
+    const ws=book.Sheets[n]; if(ws) tables[n]=XLSX.utils.sheet_to_json(ws,{defval:''});
+   });
+   if(!tables['Room Allotment']) throw new Error('Required sheet “Room Allotment” was not found. Please select the AawasSetu provisional allotment workbook.');
+   const a=tables['Room Allotment'];
+   const participants=a.filter(r=>String(r.Role||'').toLowerCase().includes('participant')).length;
+   const rps=a.filter(r=>String(r.Role||'').toLowerCase().includes('resource person')).length;
+   const pending=(tables['Verification Required']||[]).length;
+   summary.innerHTML=[['Assigned People',a.length],['Participants',participants],['Resource Persons',rps],['Verification Pending',pending]].map(x=>'<div style="background:#f1f8ff;border:1px solid #dbe7f0;border-radius:12px;padding:14px"><b style="display:block;font-size:24px;color:#075293">'+x[1]+'</b><span>'+x[0]+'</span></div>').join('');
+   priority.style.display=a.some(r=>String(r.Name||'').toLowerCase().includes('manisha vivek mahajan'))?'block':'none';
+   status.textContent='Loaded successfully: '+f.name+' • '+a.length+' allotment records. Use the dropdown to switch views.';
+   render();
+  }catch(e){book=null;tables={};summary.innerHTML='';priority.style.display='none';status.textContent='Could not load workbook: '+e.message;}
+ });
+ view.addEventListener('change',render); search.addEventListener('input',render);
+})();
+</script>
+</body>
 </html>
