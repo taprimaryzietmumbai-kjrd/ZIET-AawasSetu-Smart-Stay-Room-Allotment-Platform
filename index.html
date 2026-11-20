@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hostel Accommodation / Participant Details | ZIET Mumbai</title>
+<title>ZIET AawasSetu | Smart Stay & Room Allotment Platform</title>
 <style>
 *{box-sizing:border-box}
 :root{--blue:#1261a0;--deep:#073b66;--sky:#eaf6ff;--green:#18a957;--orange:#f59e0b;--pink:#e83e8c;--purple:#7c3aed;--ink:#18324a;--muted:#64748b;--line:#dbe7f0}
@@ -91,12 +91,42 @@ button.action{border:0;border-radius:11px;padding:13px 19px;font-size:15px;font-
 <header class="hero">
   <div class="small">केन्द्रीय विद्यालय संगठन, आंचलिक शिक्षा एवं प्रशिक्षण संस्थान, मुंबई</div>
   <div class="small">KENDRIYA VIDYALAYA SANGATHAN (KVS) ZONAL INSTITUTE OF EDUCATION AND TRAINING (ZIET) MUMBAI</div>
-  <h1>Hostel Accommodation / Participant Details</h1>
-  <p>ZIET Mumbai | Kendriya Vidyalaya Sangathan</p>
-  <span class="badge">🛏️ Hostel Accommodation • Participant Details • KV Information</span>
+  <h1>ZIET AawasSetu</h1>
+  <p>Smart Stay • Guest Services • Intelligent Room Allotment</p>
+  <span class="badge">🏡 Smart Stay • Room Allotment • Guest & Participant Services</span>
 </header>
 
-<main class="wrap">
+<main class="wrap">\n
+<style>
+#awaas-dashboard{margin:18px 0 22px}
+#awaas-dashboard .dash-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#awaas-dashboard .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+#awaas-dashboard .stat{padding:15px;border:1px solid #dbe7f0;border-radius:14px;background:linear-gradient(145deg,#fff,#f1f8ff)}
+#awaas-dashboard .stat b{display:block;font-size:25px;color:#075293}
+#awaas-dashboard .dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+#awaas-dashboard .dash-tile{border:1px solid #dbe7f0;border-radius:14px;padding:15px;background:#fff}
+#awaas-dashboard .dash-tile h3{margin:0 0 8px;color:#075293}
+#awaas-dashboard .block-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #edf2f7}
+#awaas-dashboard .block-row:last-child{border:0}
+#awaas-dashboard .primary-btn{border:0;border-radius:10px;background:#075293;color:white;padding:11px 15px;font-weight:800;cursor:pointer}
+@media(max-width:760px){#awaas-dashboard .stats{grid-template-columns:repeat(2,1fr)}#awaas-dashboard .dash-grid{grid-template-columns:1fr}}
+</style>
+<section id="awaas-dashboard" class="card">
+ <div class="dash-head"><div><div class="note">KENDRIYA VIDYALAYA SANGATHAN • ZIET MUMBAI</div><h2 style="margin:5px 0;color:#073b66">🏡 AawasSetu Dashboard</h2><div class="note">A connected view of rooms, beds, guest accommodation and participant records</div></div><button class="primary-btn" type="button" onclick="document.getElementById('application').scrollIntoView({behavior:'smooth'})">＋ New Accommodation Entry</button></div>
+ <div class="stats">
+  <div class="stat"><b>3</b><span>Hostel Buildings</span></div>
+  <div class="stat"><b>36</b><span>Total Rooms</span></div>
+  <div class="stat"><b>108</b><span>Total Beds</span></div>
+  <div class="stat"><b>35</b><span>Allotable Rooms*</span></div>
+ </div>
+ <div class="dash-grid">
+  <div class="dash-tile"><h3>🏢 Building A1</h3><div class="block-row"><span>Ground Floor</span><b>3 rooms*</b></div><div class="block-row"><span>First Floor</span><b>3 rooms</b></div><div class="block-row"><span>Second Floor</span><b>3 rooms · RO</b></div><div class="block-row"><span>Third Floor</span><b>3 rooms</b></div></div>
+  <div class="dash-tile"><h3>🏢 Building A2</h3><div class="block-row"><span>Ground Floor</span><b>3 rooms</b></div><div class="block-row"><span>First Floor</span><b>3 rooms</b></div><div class="block-row"><span>Second Floor</span><b>3 rooms · RO</b></div><div class="block-row"><span>Third Floor</span><b>3 rooms</b></div></div>
+  <div class="dash-tile"><h3>🏢 Building A3</h3><div class="block-row"><span>Ground Floor</span><b>3 rooms</b></div><div class="block-row"><span>First Floor</span><b>3 rooms</b></div><div class="block-row"><span>Second Floor</span><b>3 rooms · RO</b></div><div class="block-row"><span>Third Floor</span><b>3 rooms</b></div></div>
+ </div>
+ <p class="note" style="margin:12px 0 0">*A1 Ground Floor Room 1 is designated Store Room cum Guard Room and is excluded from allotment. Each room has 3 beds, AC, geyser and attached washroom. Second-floor RO purifier is a facility, not an allotment restriction. Dashboard figures describe configured capacity; live occupancy will display after the accommodation records/backend are connected.</p>
+</section>
+
   <div class="tabs">
     <button class="tab active" type="button" onclick="focusSection('application',this)">🛏️ Hostel Accommodation</button>
     <button class="tab" type="button" onclick="focusSection('participant',this)">👤 Participant / Room Details</button>
@@ -617,10 +647,10 @@ n>
       <div id="status" class="status"></div>
     </section>
   </form>
-</main>
+<section class="card" style="margin-top:18px"><h2 style="color:#075293;margin-top:0">AawasSetu • Accommodation Preferences</h2><p class="note">Allotment preferences recorded for the management workflow: Resource Persons / Associates are prioritised for separate single rooms when available; women participants receive preference in A1 (not an absolute restriction); differently abled and senior participants receive priority for ground-floor rooms; same-school participants are grouped together where feasible, followed by same-region grouping. Age-based allocation is subject to verified date of birth.</p></section>\n</main>
 
 <footer class="footer">
-  KVS ZIET Mumbai • Participant Arrival Facilitation • Learn • Connect • Collaborate • Grow
+  ZIET Mumbai • AawasSetu • Smart Stay & Room Allotment Platform
 </footer>
 
 <script>
