@@ -662,6 +662,28 @@ n>
    <p class="note" id="awaasAdminStatus" aria-live="polite"></p>
   </div>
  </div>
+ <div id="awaasAdminPanel" class="section green" style="margin-top:14px;display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+   <h3 style="margin:0">🛠️ Administrator Dashboard</h3>
+   <button class="primary-btn" id="awaasAdminLogout" type="button">Sign out</button>
+  </div>
+  <p class="note" id="awaasAdminWelcome">Secure administrator session active.</p>
+  <div id="awaasAdminStats" class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"></div>
+  <h4>Room Register & Occupancy</h4>
+  <div style="overflow-x:auto"><table id="awaasRoomsTable" style="width:100%;border-collapse:collapse;font-size:13px"></table></div>
+  <h4 style="margin-top:20px">Manual Room Allotment</h4>
+  <p class="note">Enter a verified participant and an available bed. The backend prevents duplicate active bed assignments.</p>
+  <div class="grid">
+   <div><label>Participant Name</label><input id="awaasPName" placeholder="Full name"></div>
+   <div><label>Participant ID</label><input id="awaasPId" placeholder="Optional; auto-generated if blank"></div>
+   <div><label>Building</label><select id="awaasBuilding"><option>A1</option><option>A2</option><option>A3</option></select></div>
+   <div><label>Floor</label><select id="awaasFloor"><option>Ground</option><option>First</option><option>Second</option><option>Third</option></select></div>
+   <div><label>Room</label><select id="awaasRoom"><option>1</option><option>2</option><option>3</option></select></div>
+   <div><label>Bed</label><select id="awaasBed"><option>1</option><option>2</option><option>3</option></select></div>
+  </div>
+  <div class="actions"><button class="primary-btn" id="awaasSaveAllotment" type="button">Save Manual Allotment</button></div>
+  <p class="note" id="awaasAdminActionStatus" aria-live="polite"></p>
+ </div>
  <div class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
   <div class="stat"><b>105</b><span>Allotable Beds</span></div>
   <div class="stat"><b>35</b><span>Allotable Rooms</span></div>
@@ -2527,6 +2549,74 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
   document.head.appendChild(script);
   setTimeout(function(){if(!finished && badge.textContent==='CHECKING BACKEND…'){badge.textContent='BACKEND CHECK TIMED OUT';badge.style.background='#fee2e2';badge.style.color='#991b1b';document.getElementById('awaasAdminMessage').textContent='No response from the Apps Script Web App. Check that the deployment is accessible to anyone.';}},12000);
 })();
+
+  let adminToken='';
+  function apiPost(payload){
+    return fetch(AWAASSETU_BACKEND_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)}).then(r=>r.json());
+  }
+  function apiGet(action,callback){
+    const cb='awaasData_'+Math.random().toString(36).slice(2);
+    window[cb]=function(data){try{callback(data);}finally{delete window[cb];tag.remove();}};
+    const tag=document.createElement('script');
+    tag.src=AWAASSETU_BACKEND_URL+'?action='+encodeURIComponent(action)+'&token='+encodeURIComponent(adminToken)+'&callback='+cb;
+    tag.onerror=function(){document.getElementById('awaasAdminActionStatus').textContent='Could not load protected data. Please sign in again.';};
+    document.head.appendChild(tag);
+  }
+  function escA(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function showAdmin(data){
+    if(!data || !data.success){document.getElementById('awaasAdminActionStatus').textContent=(data&&data.error)||'Could not load dashboard.';return;}
+    document.getElementById('awaasAdminPanel').style.display='block';
+    document.getElementById('awaasAdminWelcome').textContent='Administrator session active. Database records are live.';
+    const c=data.capacity||{};
+    document.getElementById('awaasAdminStats').innerHTML=[
+      ['Allotable Rooms',c.rooms||35],['Allotable Beds',c.beds||105],
+      ['Participants',data.participants||0],['Occupied Beds',data.occupiedBeds||0]
+    ].map(x=>'<div class="stat"><b>'+escA(x[1])+'</b><span>'+escA(x[0])+'</span></div>').join('');
+    const rooms=data.rooms||[];
+    const active=data.activeAllotments||[];
+    const lookup={};
+    active.forEach(a=>{const k=[a.Building,a.Floor,a.Room].join('|');lookup[k]=(lookup[k]||0)+1;});
+    document.getElementById('awaasRoomsTable').innerHTML='<thead><tr>'+['Building','Floor','Room','Beds','Occupied','Status'].map(x=>'<th style="text-align:left;padding:8px;background:#eaf3fb">'+x+'</th>').join('')+'</tr></thead><tbody>'+rooms.map(r=>{
+      const n=lookup[[r.Building,r.Floor,r.Room].join('|')]||0;
+      return '<tr>'+[r.Building,r.Floor,r.Room,r.Beds,n,r.Status].map(v=>'<td style="padding:7px;border-bottom:1px solid #dbe7f0">'+escA(v)+'</td>').join('')+'</tr>';
+    }).join('')+'</tbody>';
+  }
+  document.getElementById('awaasAdminLogin').addEventListener('click',function(){
+    const pin=document.getElementById('awaasAdminPin').value;
+    const status=document.getElementById('awaasAdminStatus');
+    if(!pin){status.textContent='Enter your administrator PIN.';return;}
+    status.textContent='Verifying PIN…';
+    apiPost({action:'login',pin:pin}).then(data=>{
+      if(!data.success) throw new Error(data.error||'Login failed');
+      adminToken=data.token;
+      status.textContent='Login successful. Loading room dashboard…';
+      apiGet('summary',showAdmin);
+    }).catch(err=>{status.textContent='Login could not be completed: '+err.message+'. If this is a cross-origin response error, the Apps Script web app transport needs adjustment.';});
+  });
+  document.getElementById('awaasAdminLogout').addEventListener('click',function(){
+    adminToken='';
+    document.getElementById('awaasAdminPanel').style.display='none';
+    document.getElementById('awaasAdminPin').value='';
+    document.getElementById('awaasAdminStatus').textContent='Signed out.';
+  });
+  document.getElementById('awaasSaveAllotment').addEventListener('click',function(){
+    const name=document.getElementById('awaasPName').value.trim();
+    const status=document.getElementById('awaasAdminActionStatus');
+    if(!adminToken){status.textContent='Please sign in first.';return;}
+    if(!name){status.textContent='Participant name is required.';return;}
+    const p={id:document.getElementById('awaasPId').value.trim(),name:name,role:'Participant',source:'AawasSetu admin manual entry'};
+    const a={participantId:p.id||name,participantName:name,building:document.getElementById('awaasBuilding').value,floor:document.getElementById('awaasFloor').value,room:document.getElementById('awaasRoom').value,bed:document.getElementById('awaasBed').value};
+    status.textContent='Saving participant and allotment…';
+    apiPost({action:'saveParticipant',token:adminToken,participant:p}).then(res=>{
+      if(!res.success) throw new Error(res.error||'Participant save failed');
+      a.participantId=res.id;
+      return apiPost({action:'saveAllotment',token:adminToken,allotment:a});
+    }).then(res=>{
+      if(!res.success) throw new Error(res.error||'Allotment save failed');
+      status.textContent='Manual allotment saved successfully.';
+      apiGet('summary',showAdmin);
+    }).catch(err=>status.textContent='Save failed: '+err.message);
+  });
 </script>
 </body>
 </html>
