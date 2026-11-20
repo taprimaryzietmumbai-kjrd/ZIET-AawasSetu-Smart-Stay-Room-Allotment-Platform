@@ -2573,11 +2573,9 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       ['Participants',data.participants||0],['Occupied Beds',data.occupiedBeds||0]
     ].map(x=>'<div class="stat"><b>'+escA(x[1])+'</b><span>'+escA(x[0])+'</span></div>').join('');
     const rooms=data.rooms||[];
-    const active=data.activeAllotments||[];
-    const lookup={};
-    active.forEach(a=>{const k=[a.Building,a.Floor,a.Room].join('|');lookup[k]=(lookup[k]||0)+1;});
+    const occupied=Number(data.occupiedBeds||0);
     document.getElementById('awaasRoomsTable').innerHTML='<thead><tr>'+['Building','Floor','Room','Beds','Occupied','Status'].map(x=>'<th style="text-align:left;padding:8px;background:#eaf3fb">'+x+'</th>').join('')+'</tr></thead><tbody>'+rooms.map(r=>{
-      const n=lookup[[r.Building,r.Floor,r.Room].join('|')]||0;
+      const n='—';
       return '<tr>'+[r.Building,r.Floor,r.Room,r.Beds,n,r.Status].map(v=>'<td style="padding:7px;border-bottom:1px solid #dbe7f0">'+escA(v)+'</td>').join('')+'</tr>';
     }).join('')+'</tbody>';
   }
