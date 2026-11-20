@@ -649,32 +649,24 @@ n>
 
 <section id="allotmentData" class="card">
  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-  <div><h2 style="margin:0;color:#075293">🗂️ Room Allotment Workspace</h2><p class="note">Load the provisional allotment workbook here to view participant-wise rooms, room occupancy and entries needing verification.</p></div>
-  <span style="background:#fff4db;color:#92400e;padding:8px 12px;border-radius:20px;font-weight:800">PROVISIONAL DATA</span>
+  <div><h2 style="margin:0;color:#075293">🗂️ Room Allotment Dashboard</h2><p class="note">Participant-wise allotment and live room occupancy will be displayed here inside AawasSetu.</p></div>
+  <span style="background:#fff4db;color:#92400e;padding:8px 12px;border-radius:20px;font-weight:800">BACKEND CONNECTION PENDING</span>
  </div>
  <div class="section blue" style="margin-top:14px">
-  <label for="allotmentWorkbook">📁 Select ZIET AawasSetu Provisional Room Allotment Excel</label>
-  <input id="allotmentWorkbook" type="file" accept=".xlsx,.xls" />
-  <p class="note">Choose the file named “ZIET_AawasSetu_Provisional_Room_Allotment.xlsx”. The workbook is processed in your browser; it is not uploaded to a server.</p>
-  <div id="allotmentLoadStatus" class="note" role="status">No workbook loaded yet.</div>
+  <h3 style="margin:0 0 8px">🔐 Administrator Access</h3>
+  <p class="note">The secure Admin PIN is not yet connected. No PIN is stored in this public website. The Admin Dashboard will open only after server-side verification is installed in the Google Apps Script backend.</p>
  </div>
- <div id="allotmentSummary" class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"></div>
- <div id="manishaPriority" class="section green" style="display:none">
-  <strong>♿ Priority placement — Manisha Vivek Mahajan</strong>
-  <div style="font-size:22px;font-weight:900;color:#075293;margin-top:6px">A1 · Ground Floor · Room 2 · Single</div>
-  <div class="note">Provisional placement, subject to room availability and final verification.</div>
+ <div class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
+  <div class="stat"><b>105</b><span>Allotable Beds</span></div>
+  <div class="stat"><b>35</b><span>Allotable Rooms</span></div>
+  <div class="stat"><b>3</b><span>Buildings</span></div>
+  <div class="stat"><b>12</b><span>Floors</span></div>
  </div>
- <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0">
-  <input id="allotmentSearch" type="search" placeholder="Search name, school, region or room..." style="flex:1;min-width:220px" />
-  <select id="allotmentView" style="width:auto;min-width:190px"><option value="Room Allotment">Participant-wise Allotment</option><option value="Room Occupancy">Room Occupancy</option><option value="Verification Required">Verification Required</option></select>
-  <button class="action reset" type="button" onclick="window.print()">🖨️ Print</button>
+ <div class="section orange">
+  <strong>Live allotment is not connected yet.</strong>
+  <p class="note" style="margin-bottom:0">This dashboard intentionally does not accept Excel uploads or display fabricated occupancy. Once the private Apps Script admin functions are added, actual participant allotments, room occupancy, verification records and manual changes will appear here directly.</p>
  </div>
- <div style="overflow:auto;border:1px solid #dbe7f0;border-radius:12px">
-  <table id="allotmentTable" style="width:100%;border-collapse:collapse;min-width:900px;background:#fff">
-   <thead><tr><th style="padding:10px;background:#075293;color:#fff;text-align:left">Load workbook to view allotment</th></tr></thead><tbody></tbody>
-  </table>
- </div>
- <p class="note" style="margin-top:12px">All payments must be made at the ZIET Office only. Room 1, A1 Ground Floor, remains reserved as Store Room cum Guard Room.</p>
+ <p class="note">Capacity: A1, A2 and A3; Ground, First, Second and Third floors; 3 rooms per floor; 3 beds per room. A1 Ground Floor Room 1 is Store Room cum Guard Room and is excluded. All payments are at the ZIET Office only.</p>
 </section>
 </main>
 
@@ -2456,7 +2448,7 @@ function checkPaymentScreenshotStatus(requestId) {
   );
 
 })();</script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <script>
 (function(){
  let book=null, tables={};
