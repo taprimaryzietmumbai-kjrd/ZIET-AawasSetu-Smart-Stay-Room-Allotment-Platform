@@ -2536,8 +2536,9 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
     badge.style.background=ok?'#e8f8ee':'#fff4db';
     badge.style.color=ok?'#13763b':'#92400e';
     document.getElementById('awaasAdminMessage').textContent=ok
-      ?'AawasSetu database is reachable. Administrator authentication is available through the backend; the management interface is being connected in the next stage.'
+      ?'AawasSetu database is reachable. Enter your private administrator PIN to open the management dashboard.'
       :'Backend responded, but the database is not initialized. Run setupAawasSetu() in Apps Script.';
+    document.getElementById('awaasAdminControls').style.display=ok?'block':'none';
     document.getElementById('awaasLiveTitle').textContent=ok?'Database connected; allotment engine pending.':'Live allotment is not connected yet.';
     document.getElementById('awaasLiveMessage').textContent=ok
       ?'The separate AawasSetu Master Database is reachable. Participant import, rule-based room allocation, live occupancy and admin controls are not yet activated.'
