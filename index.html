@@ -669,6 +669,18 @@ n>
   </div>
   <p class="note" id="awaasAdminWelcome">Secure administrator session active.</p>
   <div id="awaasAdminStats" class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"></div>
+  <div class="section blue" style="margin:14px 0">
+   <h4 style="margin-top:0">📥 Import Workshop Participant Lists</h4>
+   <p class="note">Select the original PRT Music and TGT AE workbooks together. The app reads the sheets directly; it does not modify the source files or the Nameplate Generator spreadsheet.</p>
+   <input id="awaasSourceFiles" type="file" accept=".xlsx,.xls" multiple>
+   <div class="actions" style="margin-top:10px;flex-wrap:wrap">
+    <button class="primary-btn" id="awaasImportSources" type="button">Import Selected Workbooks</button>
+    <button class="primary-btn" id="awaasRunAuto" type="button">Run Automatic Room Allocation</button>
+    <button class="primary-btn" id="awaasRefreshLive" type="button">Refresh Live Occupancy</button>
+    <button class="primary-btn" id="awaasPdf" type="button">📄 Download PDF</button>
+   </div>
+   <p class="note" id="awaasImportStatus" aria-live="polite"></p>
+  </div>
   <h4>Room Register & Occupancy</h4>
   <div style="overflow-x:auto"><table id="awaasRoomsTable" style="width:100%;border-collapse:collapse;font-size:13px"></table></div>
   <h4 style="margin-top:20px">Manual Room Allotment</h4>
@@ -2564,6 +2576,67 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
     document.head.appendChild(tag);
   }
   function escA(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function localMumbaiSchool(school){
+    const s=String(school||'').toLowerCase().replace(/\\s+/g,' ');
+    return /kendriya vidyalaya\\s*(no\\.?\\s*2|number\\s*2)\\s*colaba/.test(s) ||
+           /kendriya vidyalaya\\s*iit\\s*powai/.test(s);
+  }
+  function mapWorkbookRows(rows,source){
+    return rows.filter(r=>String(r['Name of the Participant']||'').trim()).map((r,i)=>{
+      const name=String(r['Name of the Participant']).trim();
+      const school=String(r.School||'').trim();
+      const isPrt=source==='PRT Music';
+      const role=isPrt ? (/^mridula\\s+nagda$/i.test(name)?'Resource Person':'Participant')
+                       : (/resource\\s*person/i.test(String(r.As||''))?'Resource Person':'Participant');
+      const employee=String(r['Employee Code ']||r['Employee Code']||'').trim();
+      const local=localMumbaiSchool(school);
+      const manisha=/^manisha\\s+vivek\\s+mahajan$/i.test(name);
+      return {
+        id:source.replace(/[^A-Za-z]/g,'')+'-'+(employee && employee!=='NaN'?employee.replace(/\\.0$/,''):(i+1)),
+        name:name,designation:String(r.Designation||''),school:school,region:String(r.Region||''),
+        gender:String(r.Gender||''),dob:String(r.DOB||''),employeeCode:employee,
+        role:role,preference:manisha?'A1 Ground Floor Room 2; single occupancy':'',
+        specialRequirement:manisha?'Ground Floor Priority':'',
+        participationCategory:local?'Local Participants':'Accommodation Required',
+        source:source
+      };
+    });
+  }
+  async function importAwaasSources(){
+    const input=document.getElementById('awaasSourceFiles'), status=document.getElementById('awaasImportStatus');
+    const files=Array.from(input.files||[]);
+    if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
+    if(!window.XLSX){status.textContent='Workbook reader is unavailable. Refresh the app and try again.';return;}
+    if(files.length!==2){status.textContent='Please select both original workbooks: PRT Music and TGT AE.';return;}
+    try{
+      let all=[];
+      for(const file of files){
+        const lower=file.name.toLowerCase();
+        const source=lower.includes('tgt')?'TGT AE':lower.includes('prt')?'PRT Music':'';
+        if(!source) throw new Error('Could not identify '+file.name+'. Use the original PRT Music and TGT AE workbook filenames.');
+        const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+        all=all.concat(mapWorkbookRows(rows,source));
+      }
+      const result=await apiPost({action:'bulkImport',token:adminToken,participants:all});
+      if(!result.success) throw new Error(result.error||'Import failed');
+      status.textContent='Imported '+result.imported+' records. Local Participants: '+result.localParticipants+'. Eligible for accommodation: '+result.eligible+'.';
+      apiGet('summary',showAdmin);
+    }catch(e){status.textContent='Import failed: '+e.message;}
+  }
+  document.getElementById('awaasImportSources').addEventListener('click',importAwaasSources);
+  document.getElementById('awaasRunAuto').addEventListener('click',async function(){
+    const status=document.getElementById('awaasImportStatus');
+    if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
+    if(!confirm('Run automatic room allocation for all eligible participants? Existing active allotments must first be released.')) return;
+    status.textContent='Running rule-based allocation…';
+    try{const r=await apiPost({action:'autoAllocate',token:adminToken});if(!r.success)throw new Error(r.error||'Allocation failed');status.textContent='Allocation complete: '+r.assigned+' people in '+r.roomsUsed+' rooms. Local Participants excluded: '+r.localParticipantsExcluded+'.';apiGet('summary',showAdmin);}
+    catch(e){status.textContent='Allocation failed: '+e.message;}
+  });
+  document.getElementById('awaasRefreshLive').addEventListener('click',function(){if(adminToken)apiGet('summary',showAdmin);});
+  document.getElementById('awaasPdf').addEventListener('click',function(){if(!adminToken){document.getElementById('awaasImportStatus').textContent='Sign in first to print the protected live dashboard.';return;}window.print();});
+
   function showAdmin(data){
     if(!data || !data.success){document.getElementById('awaasAdminActionStatus').textContent=(data&&data.error)||'Could not load dashboard.';return;}
     document.getElementById('awaasAdminPanel').style.display='block';
