@@ -2588,12 +2588,12 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       const school=String(r.School||'').trim();
       const isPrt=source==='PRT Music';
       const role=isPrt ? (/^mridula\s+nagda$/i.test(name)?'Resource Person':'Participant')
-                       : (/resource\\s*person/i.test(String(r.As||''))?'Resource Person':'Participant');
+                       : (/resource\s*person/i.test(String(r.As||''))?'Resource Person':'Participant');
       const employee=String(r['Employee Code ']||r['Employee Code']||'').trim();
       const local=localMumbaiSchool(school);
       const manisha=/^manisha\s+vivek\s+mahajan$/i.test(name);
       return {
-        id:source.replace(/[^A-Za-z]/g,'')+'-'+(employee && employee!=='NaN'?employee.replace(/\\.0$/,''):(i+1)),
+        id:source.replace(/[^A-Za-z]/g,'')+'-'+(i+1),
         name:name,designation:String(r.Designation||''),school:school,region:String(r.Region||''),
         gender:String(r.Gender||''),dob:String(r.DOB||''),employeeCode:employee,
         role:role,preference:manisha?'A1 Ground Floor Room 2; single occupancy':'',
