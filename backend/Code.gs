@@ -250,70 +250,69 @@ function ensureHeaders_(sh, required) {
   required.forEach(h => { if (existing.indexOf(h) < 0) { sh.getRange(1,sh.getLastColumn()+1).setValue(h); } });
 }
 function autoAllocate_(ss) {
-  const people = readObjects_(ss.getSheetByName('Participants')).filter(p =>
-    String(p['Participation Category'] || '') !== 'Local Participants' &&
-    String(p['Role'] || 'Participant') !== 'Local Participant'
-  );
-  const rooms = readObjects_(ss.getSheetByName('Rooms')).filter(r => String(r.Allotable)==='Yes');
-  const sh = ss.getSheetByName('Allotments');
-  const existing = readObjects_(sh);
-  const active = existing.filter(a => String(a['Allotment Status'])==='Active');
-  if (active.length) throw new Error('Active allotments already exist. Release the current allotments before running a fresh automatic allocation.');
-  if (!people.length) throw new Error('Import participant records before automatic allocation.');
-  const normalize = v => String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const isFemale = p => /female|f$/.test(String(p.Gender||'').toLowerCase());
-  const genders = {Female:people.filter(isFemale), Male:people.filter(p=>!isFemale(p))};
-  const preferred = p => normalize(p.Name)==='manishavivekmahajan';
-  const isResource = p => /resource person|resource associate/i.test(String(p.Role||''));
-  const groundPriority = p => ['rdparaskar','santoshvishramnathe','manishavivekmahajan'].includes(normalize(p.Name));
-  // Honour the explicitly requested Manisha single room, then add RP singles only if capacity allows.
-  const singleSet = new Set();
-  const candidates = people.filter(p=>preferred(p)||isResource(p)).sort((a,b)=>(preferred(b)?1:0)-(preferred(a)?1:0));
-  function roomsNeeded(set) {
-    return ['Female','Male'].reduce((sum,g)=>{
-      const count=genders[g].length, singles=genders[g].filter(p=>set.has(String(p['Participant ID']))).length;
-      return sum + singles + Math.ceil((count-singles)/3);
-    },0);
-  }
-  candidates.forEach(p=>{const id=String(p['Participant ID']);singleSet.add(id);if(roomsNeeded(singleSet)>rooms.length)singleSet.delete(id);});
-  const single = p => singleSet.has(String(p['Participant ID']));
-  const floorOrder = ['Ground','First','Second','Third'];
-  const roomOrder = rooms.sort((a,b) => {
-    const aPref = a.Building==='A1' && a.Floor==='Ground' && String(a.Room)==='2' ? -1 : 0;
-    const bPref = b.Building==='A1' && b.Floor==='Ground' && String(b.Room)==='2' ? -1 : 0;
-    return aPref-bPref || ['A1','A2','A3'].indexOf(a.Building)-['A1','A2','A3'].indexOf(b.Building) || floorOrder.indexOf(a.Floor)-floorOrder.indexOf(b.Floor) || Number(a.Room)-Number(b.Room);
+  const allPeople=readObjects_(ss.getSheetByName('Participants'));
+  const people=allPeople.filter(p=>String(p['Participation Category']||'')!=='Local Participants' && String(p.Role||'Participant')!=='Local Participant');
+  const rooms=readObjects_(ss.getSheetByName('Rooms')).filter(r=>String(r.Allotable)==='Yes');
+  const sh=ss.getSheetByName('Allotments');
+  if(readObjects_(sh).some(a=>String(a['Allotment Status'])==='Active')) throw new Error('Active allotments already exist. Release them before a fresh allocation.');
+  if(!people.length) throw new Error('Import participant records before automatic allocation.');
+  const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const female=p=>/female|f$/.test(String(p.Gender||'').toLowerCase());
+  const gender=p=>female(p)?'Female':'Male';
+  const manisha=p=>norm(p.Name)==='manishavivekmahajan';
+  const rp=p=>/resource person|resource associate/i.test(String(p.Role||''));
+  const ground=p=>['rdparaskar','santoshvishramnathe','manishavivekmahajan'].includes(norm(p.Name));
+  const floorOrder=['Ground','First','Second','Third'];
+  const roomOrder=rooms.sort((a,b)=>{
+    const ap=a.Building==='A1'&&a.Floor==='Ground'&&String(a.Room)==='2'?-1:0;
+    const bp=b.Building==='A1'&&b.Floor==='Ground'&&String(b.Room)==='2'?-1:0;
+    return ap-bp||['A1','A2','A3'].indexOf(a.Building)-['A1','A2','A3'].indexOf(b.Building)||floorOrder.indexOf(a.Floor)-floorOrder.indexOf(b.Floor)||Number(a.Room)-Number(b.Room);
   });
-  const assignments = [];
-  const used = new Set();
-  function takeRoom(gender, occupants, forcePreferred) {
+  const assignments=[],used=new Set();
+  function takeRoom(g,occupants,forceManisha){
     let room;
-    if (forcePreferred) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')) && r.Building==='A1' && r.Floor==='Ground' && String(r.Room)==='2');
-    if (!room && occupants.some(groundPriority)) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')) && r.Floor==='Ground');
-    if (!room) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')));
-    if (!room) throw new Error('Insufficient rooms: '+assignments.length+' beds assigned for '+people.length+' eligible participants. Check gender split and single-room priorities.');
-    const key=[room.Building,room.Floor,room.Room].join('|'); used.add(key);
-    occupants.forEach((p,i)=>assignments.push({'Allotment ID':Utilities.getUuid(),'Participant ID':p['Participant ID'],'Participant Name':p.Name,'Building':room.Building,'Floor':room.Floor,'Room':room.Room,'Bed':i+1,'Allotment Status':'Active','Allotted At':new Date(),'Updated At':new Date(),'Remarks':single(p)?'Single-room priority':'Automatic allotment'}));
+    if(forceManisha) room=roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|'))&&r.Building==='A1'&&r.Floor==='Ground'&&String(r.Room)==='2');
+    if(!room&&occupants.some(ground)) room=roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|'))&&r.Floor==='Ground');
+    if(!room) room=roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')));
+    if(!room) throw new Error('Capacity conflict: '+(used.size+1)+' rooms are required, but only '+roomOrder.length+' are allotable. Review gender-wise double occupancy for Resource Persons.');
+    used.add([room.Building,room.Floor,room.Room].join('|'));
+    occupants.forEach((p,i)=>{
+      let remark=manisha(p)?'Single occupancy — A1 Ground Floor Room 2':rp(p)?'Resource Person — double occupancy':occupants.length===2?'Double occupancy':'Triple occupancy';
+      if(ground(p)) remark+='; Ground Floor Priority';
+      assignments.push({'Allotment ID':Utilities.getUuid(),'Participant ID':p['Participant ID'],'Participant Name':p.Name,'Building':room.Building,'Floor':room.Floor,'Room':room.Room,'Bed':i+1,'Allotment Status':'Active','Allotted At':new Date(),'Updated At':new Date(),'Remarks':remark});
+    });
   }
-  ['Female','Male'].forEach(g => {
-    const list=genders[g].slice().sort((a,b)=>(single(b)?1:0)-(single(a)?1:0) || (groundPriority(b)?1:0)-(groundPriority(a)?1:0) || (preferred(b)?1:0)-(preferred(a)?1:0) || String(a.School||'').localeCompare(String(b.School||'')));
-    const singles=list.filter(single);
-    singles.forEach(p=>takeRoom(g,[p],preferred(p)));
-    const rest=list.filter(p=>!single(p));
-    // Preserve school grouping where practical; fill triples first to respect the 35-room capacity.
-    const bySchool={};
-    rest.forEach(p=>{const k=String(p.School||'Unknown');(bySchool[k]=bySchool[k]||[]).push(p);});
-    let pool=[];
-    Object.keys(bySchool).sort().forEach(k=>pool=pool.concat(bySchool[k]));
-    while(pool.length) {
-      if (used.size>=roomOrder.length) throw new Error('Room capacity exceeded while allocating '+g+' participants.');
-      const group=pool.splice(0,3);
-      takeRoom(g,group,false);
+  const byGender={Female:people.filter(p=>gender(p)==='Female'),Male:people.filter(p=>gender(p)==='Male')};
+  if(byGender.Female.some(manisha)) takeRoom('Female',[byGender.Female.find(manisha)],true);
+  else if(byGender.Male.some(manisha)) takeRoom('Male',[byGender.Male.find(manisha)],true);
+
+  ['Female','Male'].forEach(g=>{
+    let list=byGender[g].filter(p=>!manisha(p));
+    const rps=list.filter(rp), nonRps=list.filter(p=>!rp(p));
+    // Pair RPs with another same-gender RP; an odd RP is paired with a same-gender participant.
+    const special=[];
+    for(let i=0;i+1<rps.length;i+=2) special.push([rps[i],rps[i+1]]);
+    let remainingNonRps=nonRps.slice();
+    if(rps.length%2){
+      if(!remainingNonRps.length) throw new Error('Cannot provide double occupancy for '+rps[rps.length-1].Name+': no same-gender participant is available to share.');
+      special.push([rps[rps.length-1],remainingNonRps.shift()]);
     }
+    special.forEach(group=>takeRoom(g,group,false));
+    // Group remaining participants in triples, using the minimum number of doubles needed.
+    const schoolGroups={};
+    remainingNonRps.forEach(p=>{const k=String(p.School||'Unknown');(schoolGroups[k]=schoolGroups[k]||[]).push(p);});
+    let pool=[];Object.keys(schoolGroups).sort().forEach(k=>pool=pool.concat(schoolGroups[k]));
+    const roomCount=Math.ceil(pool.length/3), doubleRooms=roomCount*3-pool.length;
+    const tripleCount=pool.length-doubleRooms*2;
+    const triples=pool.splice(0,tripleCount), doubles=pool;
+    while(triples.length) takeRoom(g,triples.splice(0,3),false);
+    while(doubles.length) takeRoom(g,doubles.splice(0,2),false);
   });
-  if (assignments.length!==people.length) throw new Error('Allocation validation failed: assigned '+assignments.length+' of '+people.length+'.');
-  if (used.size>rooms.length) throw new Error('Room capacity exceeded.');
+  if(assignments.length!==people.length) throw new Error('Allocation validation failed: assigned '+assignments.length+' of '+people.length+'.');
+  if(used.size>rooms.length) throw new Error('Room capacity exceeded.');
   const rows=assignments.map(a=>[a['Allotment ID'],a['Participant ID'],a['Participant Name'],a.Building,a.Floor,a.Room,a.Bed,a['Allotment Status'],a['Allotted At'],a['Updated At'],a.Remarks]);
   if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,rows[0].length).setValues(rows);
-  audit_(ss,'ADMIN','AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({assigned:assignments.length,rooms:used.size,localExcluded:readObjects_(ss.getSheetByName('Participants')).filter(p=>String(p['Participation Category'])==='Local Participants').length}));
-  return {assigned:assignments.length,roomsUsed:used.size,localParticipantsExcluded:readObjects_(ss.getSheetByName('Participants')).filter(p=>String(p['Participation Category'])==='Local Participants').length,assignments:assignments};
+  const localCount=allPeople.filter(p=>String(p['Participation Category'])==='Local Participants').length;
+  audit_(ss,'ADMIN','AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({assigned:assignments.length,rooms:used.size,localExcluded:localCount,resourcePersonOccupancy:'double'}));
+  return {success:true,assigned:assignments.length,roomsUsed:used.size,occupiedBeds:assignments.length,localParticipantsExcluded:localCount,assignments:assignments};
 }
