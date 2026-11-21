@@ -150,23 +150,36 @@ function doPost(e) {
       return json_({success:true,imported:imported,localParticipants:local,eligible:imported-local});
     }
     if (action === 'markLocalParticipants') {
-      const sh = db_().getSheetByName('Participants');
-      const values = sh.getDataRange().getValues();
-      const headers = values[0].map(String);
+      const ss = db_();
+      const sh = ss.getSheetByName('Participants');
+      if (!sh) throw new Error('Participants sheet is missing from the AawasSetu database.');
+      if (sh.getLastRow() < 1) throw new Error('Participants sheet has no header row. Import participant workbooks first.');
+      // Repair missing headers safely before using their column indexes.
+      let lastCol = Math.max(sh.getLastColumn(), 1);
+      let headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(v => String(v).trim());
+      ['Name','School','Participation Category'].forEach(header => {
+        if (headers.indexOf(header) === -1) {
+          lastCol += 1;
+          sh.getRange(1, lastCol).setValue(header);
+          headers.push(header);
+        }
+      });
       const nameCol = headers.indexOf('Name');
       const schoolCol = headers.indexOf('School');
       const categoryCol = headers.indexOf('Participation Category');
+      if (nameCol < 0 || schoolCol < 0 || categoryCol < 0) throw new Error('Could not locate required participant columns. No participant records were changed.');
+      const values = sh.getDataRange().getValues();
       let marked = 0;
       const names = [];
       for (let i = 1; i < values.length; i++) {
         const p = {name: values[i][nameCol], school: values[i][schoolCol]};
-        if (isLocalParticipant_(p) && String(values[i][categoryCol]) !== 'Local Participants') {
+        if (isLocalParticipant_(p) && String(values[i][categoryCol] || '') !== 'Local Participants') {
           sh.getRange(i + 1, categoryCol + 1).setValue('Local Participants');
           marked++;
           names.push(String(values[i][nameCol]));
         }
       }
-      audit_(db_(), 'ADMIN', 'MARK_LOCAL_PARTICIPANTS', 'PARTICIPANTS', 'MUMBAI_CITY', JSON.stringify({marked:marked,names:names}));
+      audit_(ss, 'ADMIN', 'MARK_LOCAL_PARTICIPANTS', 'PARTICIPANTS', 'MUMBAI_CITY', JSON.stringify({marked:marked,names:names}));
       return json_({success:true,marked:marked,names:names});
     }
     if (action === 'autoAllocate') {
