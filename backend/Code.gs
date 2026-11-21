@@ -19,7 +19,7 @@ const TOKEN_PROPERTY_PREFIX = 'AWAASSETU_TOKEN_';
 
 const SHEETS = {
   Rooms: ['Building','Floor','Room','Beds','AC','Geyser','Attached Washroom','Facility','Allotable','Status'],
-  Participants: ['Participant ID','Name','Designation','School','Region','Gender','DOB','Employee Code','Role','Preference','Special Requirement','Verification Status','Source'],
+  Participants: ['Participant ID','Name','Designation','School','Region','Gender','DOB','Employee Code','Role','Preference','Special Requirement','Verification Status','Source','Participation Category'],
   Allotments: ['Allotment ID','Participant ID','Participant Name','Building','Floor','Room','Bed','Allotment Status','Allotted At','Updated At','Remarks'],
   Verification: ['Record ID','Participant ID','Participant Name','Field','Submitted Value','Suggested Value','Reason','Review Status','Reviewed By','Reviewed At'],
   AuditLog: ['Timestamp','Actor','Action','Record Type','Record ID','Details']
@@ -42,6 +42,7 @@ function setupAawasSetu() {
   Object.keys(SHEETS).forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
+    if (sh.getLastRow() > 0) ensureHeaders_(sh, SHEETS[name]);
     if (sh.getLastRow() === 0) {
       sh.getRange(1,1,1,SHEETS[name].length).setValues([SHEETS[name]]);
       sh.setFrozenRows(1);
@@ -80,6 +81,9 @@ function doGet(e) {
     } else if (action === 'participants') {
       authorize_(e.parameter.token);
       result = {success:true, participants: readObjects_(db_().getSheetByName('Participants'))};
+    } else if (action === 'allotments') {
+      authorize_(e.parameter.token);
+      result = {success:true, allotments: readObjects_(db_().getSheetByName('Allotments')).filter(r => String(r['Allotment Status'])==='Active')};
     } else {
       result = {success:false, error:'Unknown action'};
     }
@@ -103,6 +107,27 @@ function doPost(e) {
       return json_({success:true, token:token, expiresIn:21600});
     }
     authorize_(body.token);
+    if (action === 'bulkImport') {
+      const list = Array.isArray(body.participants) ? body.participants : [];
+      if (!list.length) throw new Error('No participant records supplied');
+      if (list.length > 500) throw new Error('Import limit is 500 records per batch');
+      const sh = db_().getSheetByName('Participants');
+      let imported = 0, local = 0;
+      list.forEach((p, i) => {
+        if (!String(p.name || '').trim()) return;
+        const id = String(p.id || (String(p.source || 'IMPORT') + '-' + (p.employeeCode || i+1)));
+        const category = p.participationCategory === 'Local Participants' ? 'Local Participants' : 'Accommodation Required';
+        if (category === 'Local Participants') local++;
+        upsert_(sh, 'Participant ID', id, {'Participant ID':id,'Name':p.name,'Designation':p.designation||'','School':p.school||'','Region':p.region||'','Gender':p.gender||'','DOB':p.dob||'','Employee Code':p.employeeCode||'','Role':p.role||'Participant','Preference':p.preference||'','Special Requirement':p.specialRequirement||'','Verification Status':p.verificationStatus||'Imported','Source':p.source||'Bulk workbook import','Participation Category':category});
+        imported++;
+      });
+      audit_(db_(),'ADMIN','BULK_IMPORT','PARTICIPANTS','BATCH',JSON.stringify({imported:imported,local:local}));
+      return json_({success:true,imported:imported,localParticipants:local,eligible:imported-local});
+    }
+    if (action === 'autoAllocate') {
+      const result = autoAllocate_(db_());
+      return json_({success:true, ...result});
+    }
     if (action === 'saveParticipant') {
       const p = body.participant || {};
       if (!String(p.name || '').trim()) throw new Error('Participant name is required');
@@ -113,7 +138,7 @@ function doPost(e) {
         'School':p.school || '', 'Region':p.region || '', 'Gender':p.gender || '',
         'DOB':p.dob || '', 'Employee Code':p.employeeCode || '', 'Role':p.role || 'Participant',
         'Preference':p.preference || '', 'Special Requirement':p.specialRequirement || '',
-        'Verification Status':p.verificationStatus || 'Pending','Source':p.source || 'Admin entry'
+        'Verification Status':p.verificationStatus || 'Pending','Source':p.source || 'Admin entry','Participation Category':p.participationCategory || 'Accommodation Required'
       });
       audit_(db_(), 'ADMIN', 'SAVE', 'PARTICIPANT', id, p.name);
       return json_({success:true,id:id});
@@ -179,7 +204,12 @@ function summary_(ss) {
   const rooms = readObjects_(ss.getSheetByName('Rooms'));
   const people = readObjects_(ss.getSheetByName('Participants'));
   const allotments = readObjects_(ss.getSheetByName('Allotments')).filter(r => String(r['Allotment Status'])==='Active');
-  return {success:true,capacity:{buildings:3,floors:12,rooms:35,beds:105},participants:people.length,activeAllotments:allotments.length,occupiedBeds:allotments.length,availableBeds:105-allotments.length,rooms:rooms};
+  const local = people.filter(p => String(p['Participation Category'])==='Local Participants').length;
+  const eligible = people.length-local;
+  const occ = {};
+  allotments.forEach(a => { const k=[a.Building,a.Floor,a.Room].join('|'); occ[k]=(occ[k]||0)+1; });
+  rooms.forEach(r => { const k=[r.Building,r.Floor,r.Room].join('|'); r.Occupied=occ[k]||0; r.Available=Number(r.Beds||3)-r.Occupied; });
+  return {success:true,capacity:{buildings:3,floors:12,rooms:35,beds:105},participants:people.length,localParticipants:local,eligibleParticipants:eligible,activeAllotments:allotments.length,occupiedBeds:allotments.length,availableBeds:105-allotments.length,rooms:rooms,allotments:allotments};
 }
 function readObjects_(sh) {
   const values = sh.getDataRange().getValues();
@@ -211,4 +241,71 @@ function jsonp_(o, callback) {
     return ContentService.createTextOutput(callback+'('+JSON.stringify(o)+');').setMimeType(ContentService.MimeType.JAVASCRIPT);
   }
   return json_(o);
+}
+
+
+function ensureHeaders_(sh, required) {
+  const last = Math.max(sh.getLastColumn(), 1);
+  const existing = sh.getRange(1,1,1,last).getValues()[0].map(String);
+  required.forEach(h => { if (existing.indexOf(h) < 0) { sh.getRange(1,sh.getLastColumn()+1).setValue(h); } });
+}
+function autoAllocate_(ss) {
+  const people = readObjects_(ss.getSheetByName('Participants')).filter(p =>
+    String(p['Participation Category'] || '') !== 'Local Participants' &&
+    String(p['Role'] || 'Participant') !== 'Local Participant'
+  );
+  const rooms = readObjects_(ss.getSheetByName('Rooms')).filter(r => String(r.Allotable)==='Yes');
+  const sh = ss.getSheetByName('Allotments');
+  const existing = readObjects_(sh);
+  const active = existing.filter(a => String(a['Allotment Status'])==='Active');
+  if (active.length) throw new Error('Active allotments already exist. Release the current allotments before running a fresh automatic allocation.');
+  if (!people.length) throw new Error('Import participant records before automatic allocation.');
+  const normalize = v => String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const isFemale = p => /female|f$/.test(String(p.Gender||'').toLowerCase());
+  const genders = {Female:people.filter(isFemale), Male:people.filter(p=>!isFemale(p))};
+  const single = p => /resource person|resource associate/i.test(String(p.Role||'')) || normalize(p.Name)==='manishavivekmahajan';
+  const preferred = p => normalize(p.Name)==='manishavivekmahajan';
+  const floorOrder = ['Ground','First','Second','Third'];
+  const roomOrder = rooms.sort((a,b) => {
+    const aPref = a.Building==='A1' && a.Floor==='Ground' && String(a.Room)==='2' ? -1 : 0;
+    const bPref = b.Building==='A1' && b.Floor==='Ground' && String(b.Room)==='2' ? -1 : 0;
+    return aPref-bPref || ['A1','A2','A3'].indexOf(a.Building)-['A1','A2','A3'].indexOf(b.Building) || floorOrder.indexOf(a.Floor)-floorOrder.indexOf(b.Floor) || Number(a.Room)-Number(b.Room);
+  });
+  const assignments = [];
+  const used = new Set();
+  function takeRoom(gender, occupants, forcePreferred) {
+    let room;
+    if (forcePreferred) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')) && r.Building==='A1' && r.Floor==='Ground' && String(r.Room)==='2');
+    if (!room) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')));
+    if (!room) throw new Error('Insufficient rooms: '+assignments.length+' beds assigned for '+people.length+' eligible participants. Check gender split and single-room priorities.');
+    const key=[room.Building,room.Floor,room.Room].join('|'); used.add(key);
+    occupants.forEach((p,i)=>assignments.push({'Allotment ID':Utilities.getUuid(),'Participant ID':p['Participant ID'],'Participant Name':p.Name,'Building':room.Building,'Floor':room.Floor,'Room':room.Room,'Bed':i+1,'Allotment Status':'Active','Allotted At':new Date(),'Updated At':new Date(),'Remarks':single(p)?'Single-room priority':'Automatic allotment'}));
+  }
+  ['Female','Male'].forEach(g => {
+    const list=genders[g].slice().sort((a,b)=>(single(b)?1:0)-(single(a)?1:0) || (preferred(b)?1:0)-(preferred(a)?1:0) || String(a.School||'').localeCompare(String(b.School||'')));
+    const singles=list.filter(single);
+    singles.forEach(p=>takeRoom(g,[p],preferred(p)));
+    const rest=list.filter(p=>!single(p));
+    // Preserve school grouping where practical; fill triples first to respect the 35-room capacity.
+    const bySchool={};
+    rest.forEach(p=>{const k=String(p.School||'Unknown');(bySchool[k]=bySchool[k]||[]).push(p);});
+    let pool=[];
+    Object.keys(bySchool).sort().forEach(k=>pool=pool.concat(bySchool[k]));
+    while(pool.length) {
+      const remainingRooms=roomOrder.length-used.size;
+      const remainingPeople=pool.length;
+      if (remainingRooms<=0) throw new Error('Room capacity exceeded while allocating '+g+' participants.');
+      let size=3;
+      if (remainingPeople<=remainingRooms) size=1;
+      else if (remainingPeople<=remainingRooms*2) size=2;
+      const group=pool.splice(0,size);
+      takeRoom(g,group,false);
+    }
+  });
+  if (assignments.length!==people.length) throw new Error('Allocation validation failed: assigned '+assignments.length+' of '+people.length+'.');
+  if (used.size>rooms.length) throw new Error('Room capacity exceeded.');
+  const rows=assignments.map(a=>[a['Allotment ID'],a['Participant ID'],a['Participant Name'],a.Building,a.Floor,a.Room,a.Bed,a['Allotment Status'],a['Allotted At'],a['Updated At'],a.Remarks]);
+  if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,rows[0].length).setValues(rows);
+  audit_(ss,'ADMIN','AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({assigned:assignments.length,rooms:used.size,localExcluded:readObjects_(ss.getSheetByName('Participants')).filter(p=>String(p['Participation Category'])==='Local Participants').length}));
+  return {assigned:assignments.length,roomsUsed:used.size,localParticipantsExcluded:readObjects_(ss.getSheetByName('Participants')).filter(p=>String(p['Participation Category'])==='Local Participants').length,assignments:assignments};
 }
