@@ -300,70 +300,117 @@ function allocationPreview_(ss) {
 }
 
 function autoAllocate_(ss) {
+  // Incremental, non-destructive allocation: existing Active allotments are never released or rewritten.
   const allPeople=readObjects_(ss.getSheetByName('Participants'));
   const people=allPeople.filter(p=>String(p['Participation Category']||'')!=='Local Participants' && String(p.Role||'Participant')!=='Local Participant');
-  const rooms=readObjects_(ss.getSheetByName('Rooms')).filter(r=>String(r.Allotable)==='Yes');
-  const sh=ss.getSheetByName('Allotments');
-  if(readObjects_(sh).some(a=>String(a['Allotment Status'])==='Active')) throw new Error('Active allotments already exist. Release them before a fresh allocation.');
   if(!people.length) throw new Error('Import participant records before automatic allocation.');
   const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-  const female=p=>/female|f$/.test(String(p.Gender||'').toLowerCase());
-  const gender=p=>female(p)?'Female':'Male';
+  const genderOf=p=>{
+    const v=String(p.Gender||'').trim().toLowerCase();
+    if(/^(f|female|woman|women)$/.test(v)) return 'Female';
+    if(/^(m|male|man|men)$/.test(v)) return 'Male';
+    throw new Error('Gender needs verification before allocation: '+p.Name+' ('+(p.Gender||'blank')+'). No records were changed.');
+  };
   const manisha=p=>norm(p.Name)==='manishavivekmahajan';
   const rp=p=>/resource person|resource associate/i.test(String(p.Role||''));
   const ground=p=>['rdparaskar','santoshvishramnathe','manishavivekmahajan'].includes(norm(p.Name));
-  const floorOrder=['Ground','First','Second','Third'];
-  const roomOrder=rooms.sort((a,b)=>{
-    const ap=a.Building==='A1'&&a.Floor==='Ground'&&String(a.Room)==='2'?-1:0;
-    const bp=b.Building==='A1'&&b.Floor==='Ground'&&String(b.Room)==='2'?-1:0;
-    return ap-bp||['A1','A2','A3'].indexOf(a.Building)-['A1','A2','A3'].indexOf(b.Building)||floorOrder.indexOf(a.Floor)-floorOrder.indexOf(b.Floor)||Number(a.Room)-Number(b.Room);
+  const participantById={}; people.forEach(p=>{const id=String(p['Participant ID']||'');if(!id)throw new Error('Missing Participant ID for '+p.Name);if(participantById[id])throw new Error('Duplicate Participant ID: '+id);participantById[id]=p;});
+  const sh=ss.getSheetByName('Allotments');
+  const allAllotments=readObjects_(sh), active=allAllotments.filter(a=>String(a['Allotment Status'])==='Active');
+  const activeById={}, bedKeys={}, roomMap={};
+  active.forEach(a=>{
+    const id=String(a['Participant ID']||''), p=participantById[id];
+    if(!p) throw new Error('Existing allotment has no eligible participant match: '+(a['Participant Name']||id)+'. Reconcile manually; no records changed.');
+    if(activeById[id]) throw new Error('Participant has multiple active allotments: '+p.Name+'. No records changed.');
+    activeById[id]=true;
+    const bed=[a.Building,a.Floor,a.Room,a.Bed].join('|');
+    if(bedKeys[bed]) throw new Error('Duplicate occupied bed: '+bed+'. No records changed.');
+    bedKeys[bed]=true;
+    const key=[a.Building,a.Floor,a.Room].join('|');
+    (roomMap[key]=roomMap[key]||[]).push({person:p,allotment:a});
   });
-  const assignments=[],used=new Set();
-  function takeRoom(g,occupants,forceManisha){
-    let room;
-    if(forceManisha) room=roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|'))&&r.Building==='A1'&&r.Floor==='Ground'&&String(r.Room)==='2');
-    if(!room&&occupants.some(ground)) room=roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|'))&&r.Floor==='Ground');
-    if(!room) room=roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')));
-    if(!room) throw new Error('Capacity conflict: '+(used.size+1)+' rooms are required, but only '+roomOrder.length+' are allotable. Review gender-wise double occupancy for Resource Persons.');
-    used.add([room.Building,room.Floor,room.Room].join('|'));
-    occupants.forEach((p,i)=>{
-      let remark=manisha(p)?'Single occupancy — A1 Ground Floor Room 2':rp(p)?'Resource Person — double occupancy':occupants.length===2?'Double occupancy':'Triple occupancy';
-      if(ground(p)) remark+='; Ground Floor Priority';
-      assignments.push({'Allotment ID':Utilities.getUuid(),'Participant ID':p['Participant ID'],'Participant Name':p.Name,'Building':room.Building,'Floor':room.Floor,'Room':room.Room,'Bed':i+1,'Allotment Status':'Active','Allotted At':new Date(),'Updated At':new Date(),'Remarks':remark});
+  const roomRows=readObjects_(ss.getSheetByName('Rooms'));
+  const rooms=roomRows.filter(r=>String(r.Allotable)==='Yes');
+  const roomByKey={}; rooms.forEach(r=>roomByKey[[r.Building,r.Floor,r.Room].join('|')]=r);
+  Object.keys(roomMap).forEach(k=>{
+    const occupants=roomMap[k], room=roomByKey[k];
+    if(!room) throw new Error('Existing allotment points to a non-allotable/unknown room: '+k+'. No records changed.');
+    if(occupants.length>Number(room.Beds||3)) throw new Error('Existing room exceeds bed capacity: '+k+'. No records changed.');
+    const gs={}; occupants.forEach(x=>gs[genderOf(x.person)]=true);
+    if(Object.keys(gs).length>1) throw new Error('Existing room has mixed genders: '+k+'. Reconcile before allocation; no records changed.');
+  });
+  const pending=people.filter(p=>!activeById[String(p['Participant ID'])]);
+  if(!pending.length) return {success:true,assigned:0,alreadyAllotted:active.length,roomsUsed:Object.keys(roomMap).length,occupiedBeds:active.length,localParticipantsExcluded:allPeople.length-people.length,message:'All eligible participants already have active allotments.'};
+  // Validate all genders before making any writes.
+  const byGender={Female:[],Male:[]};
+  pending.forEach(p=>byGender[genderOf(p)].push(p));
+  const assignments=[], now=new Date();
+  const floorOrder=['Ground','First','Second','Third'], buildingOrder=['A1','A2','A3'];
+  const roomKey=r=>[r.Building,r.Floor,r.Room].join('|');
+  const roomSort=(a,b)=>floorOrder.indexOf(a.Floor)-floorOrder.indexOf(b.Floor)||buildingOrder.indexOf(a.Building)-buildingOrder.indexOf(b.Building)||Number(a.Room)-Number(b.Room);
+  function currentCount(r){return (roomMap[roomKey(r)]||[]).length;}
+  function currentGender(r){const xs=roomMap[roomKey(r)]||[];return xs.length?genderOf(xs[0].person):'';}
+  function freeBeds(r){return Number(r.Beds||3)-currentCount(r);}
+  function addToRoom(p,r,remark){
+    const key=roomKey(r), n=currentCount(r)+1;
+    const a={'Allotment ID':Utilities.getUuid(),'Participant ID':p['Participant ID'],'Participant Name':p.Name,'Building':r.Building,'Floor':r.Floor,'Room':r.Room,'Bed':n,'Allotment Status':'Active','Allotted At':now,'Updated At':now,'Remarks':remark};
+    assignments.push(a); (roomMap[key]=roomMap[key]||[]).push({person:p,allotment:a});
+  }
+  function placeGroup(group,g,preferGround){
+    const school=String(group[0].School||'');
+    let candidates=rooms.filter(r=>freeBeds(r)>=group.length&&(!currentGender(r)||currentGender(r)===g));
+    candidates.sort((a,b)=>{
+      const ag=preferGround&&a.Floor==='Ground'?0:1, bg=preferGround&&b.Floor==='Ground'?0:1;
+      const as=school&&roomMap[roomKey(a)]&&roomMap[roomKey(a)].some(x=>String(x.person.School||'')===school)?0:1;
+      const bs=school&&roomMap[roomKey(b)]&&roomMap[roomKey(b)].some(x=>String(x.person.School||'')===school)?0:1;
+      return ag-bg||as-bs||roomSort(a,b);
+    });
+    const room=candidates[0];
+    if(!room) throw new Error('No compatible room space for '+group.map(p=>p.Name).join(', ')+'. Existing allotments were preserved; no new records were written.');
+    group.forEach(p=>{
+      let note=manisha(p)?'Single occupancy — A1 Ground Floor Room 2':rp(p)?'Resource Person — double occupancy':group.length===2?'Double occupancy':'Triple occupancy';
+      if(ground(p)) note+='; Ground Floor Priority';
+      addToRoom(p,room,note);
     });
   }
-  const byGender={Female:people.filter(p=>gender(p)==='Female'),Male:people.filter(p=>gender(p)==='Male')};
-  if(byGender.Female.some(manisha)) takeRoom('Female',[byGender.Female.find(manisha)],true);
-  else if(byGender.Male.some(manisha)) takeRoom('Male',[byGender.Male.find(manisha)],true);
-
+  // Manisha's reserved single room is protected and never shared.
+  const manishaPending=pending.find(manisha);
+  if(manishaPending){
+    const target=rooms.find(r=>r.Building==='A1'&&r.Floor==='Ground'&&String(r.Room)==='2');
+    if(!target) throw new Error('Reserved room A1 Ground Room 2 is unavailable. No records changed.');
+    const existing=roomMap[roomKey(target)]||[];
+    if(existing.length) throw new Error('A1 Ground Room 2 is occupied by another participant; Manisha single-room exception needs review. No records changed.');
+    addToRoom(manishaPending,target,'Single occupancy — A1 Ground Floor Room 2; Ground Floor Priority');
+    byGender[genderOf(manishaPending)]=byGender[genderOf(manishaPending)].filter(p=>!manisha(p));
+  }
   ['Female','Male'].forEach(g=>{
     let list=byGender[g].filter(p=>!manisha(p));
-    const rps=list.filter(rp), nonRps=list.filter(p=>!rp(p));
-    // Pair RPs with another same-gender RP; an odd RP is paired with a same-gender participant.
-    const special=[];
-    for(let i=0;i+1<rps.length;i+=2) special.push([rps[i],rps[i+1]]);
-    let remainingNonRps=nonRps.slice();
+    const priority=list.filter(ground), rest=list.filter(p=>!ground(p));
+    // Put named ground-floor priority participants into a ground-floor room first.
+    priority.forEach(p=>placeGroup([p],g,true));
+    // RPs are allocated in pairs; an odd RP shares with a same-gender participant.
+    const rps=rest.filter(rp), nonRps=rest.filter(p=>!rp(p)), groups=[];
+    for(let i=0;i+1<rps.length;i+=2) groups.push([rps[i],rps[i+1]]);
+    let pool=nonRps.slice();
     if(rps.length%2){
-      if(!remainingNonRps.length) throw new Error('Cannot provide double occupancy for '+rps[rps.length-1].Name+': no same-gender participant is available to share.');
-      special.push([rps[rps.length-1],remainingNonRps.shift()]);
+      if(!pool.length) throw new Error('Cannot provide double occupancy for '+rps[rps.length-1].Name+': no same-gender participant is available. Existing allotments preserved; no new records written.');
+      groups.push([rps[rps.length-1],pool.shift()]);
     }
-    special.forEach(group=>takeRoom(g,group,false));
-    // Group remaining participants in triples, using the minimum number of doubles needed.
-    const schoolGroups={};
-    remainingNonRps.forEach(p=>{const k=String(p.School||'Unknown');(schoolGroups[k]=schoolGroups[k]||[]).push(p);});
-    let pool=[];Object.keys(schoolGroups).sort().forEach(k=>pool=pool.concat(schoolGroups[k]));
-    if(pool.length===1) throw new Error('One '+g+' participant remains after Resource Person pairing; double occupancy cannot be satisfied without another same-gender participant.');
-    const roomCount=Math.ceil(pool.length/3), doubleRooms=roomCount*3-pool.length;
-    const tripleCount=pool.length-doubleRooms*2;
-    const triples=pool.splice(0,tripleCount), doubles=pool;
-    while(triples.length) takeRoom(g,triples.splice(0,3),false);
-    while(doubles.length) takeRoom(g,doubles.splice(0,2),false);
+    groups.forEach(gp=>placeGroup(gp,g,false));
+    // Keep schoolmates together where feasible; groups of 3 first, then 2.
+    const schools={}; pool.forEach(p=>{const k=String(p.School||'Unknown');(schools[k]=schools[k]||[]).push(p);});
+    let ordered=[];Object.keys(schools).sort().forEach(k=>ordered=ordered.concat(schools[k]));
+    while(ordered.length){
+      let size=ordered.length%3===1?2:Math.min(3,ordered.length);
+      if(ordered.length===1) throw new Error('One '+g+' participant remains without a same-gender roommate: '+ordered[0].Name+'. Existing allotments preserved; no new records written.');
+      placeGroup(ordered.splice(0,size),g,false);
+    }
   });
-  if(assignments.length!==people.length) throw new Error('Allocation validation failed: assigned '+assignments.length+' of '+people.length+'.');
-  if(used.size>rooms.length) throw new Error('Room capacity exceeded.');
+  if(assignments.length!==pending.length) throw new Error('Allocation validation failed; no new records were written.');
+  // One bulk write only after all validations and placement decisions succeed.
   const rows=assignments.map(a=>[a['Allotment ID'],a['Participant ID'],a['Participant Name'],a.Building,a.Floor,a.Room,a.Bed,a['Allotment Status'],a['Allotted At'],a['Updated At'],a.Remarks]);
   if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,rows[0].length).setValues(rows);
   const localCount=allPeople.filter(p=>String(p['Participation Category'])==='Local Participants').length;
-  audit_(ss,'ADMIN','AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({assigned:assignments.length,rooms:used.size,localExcluded:localCount,resourcePersonOccupancy:'double'}));
-  return {success:true,assigned:assignments.length,roomsUsed:used.size,occupiedBeds:assignments.length,localParticipantsExcluded:localCount,assignments:assignments};
+  audit_(ss,'ADMIN','INCREMENTAL_AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({newlyAssigned:assignments.length,previouslyActive:active.length,roomsUsed:Object.keys(roomMap).length,localExcluded:localCount}));
+  return {success:true,assigned:assignments.length,alreadyAllotted:active.length,roomsUsed:Object.keys(roomMap).length,occupiedBeds:active.length+assignments.length,localParticipantsExcluded:localCount,assignments:assignments};
 }
