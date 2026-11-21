@@ -2672,7 +2672,16 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       if((r.reservedRoomViolations||[]).length) issues.push((r.reservedRoomViolations||[]).length+' non-Manisha occupant(s) in her protected single room');
       if((r.duplicateNames||[]).length) issues.push((r.duplicateNames||[]).length+' duplicate participant names require identity review');
       const unassigned=c.unallottedEligible||0;
-      status.textContent='NON-DESTRUCTIVE PREVIEW — '+c.totalRecords+' records; '+c.localParticipants+' Local Participants; '+c.eligibleParticipants+' eligible; '+c.activeAllotments+' active allotments; '+unassigned+' eligible participants unallotted. '+(issues.length?'Findings: '+issues.join('; ')+'.':'No listed reconciliation issues.')+' No data was changed.';
+      const localDetails=(r.localParticipantsAllotted||[]).map(a=>(a['Participant Name']||'Unknown')+' [ID '+(a['Participant ID']||'?')+'] — '+[a.Building,a.Floor,'Room '+a.Room,'Bed '+a.Bed].join(', '));
+      const orphanDetails=(r.orphanAllotments||[]).map(a=>(a['Participant Name']||'Unknown')+' [ID '+(a['Participant ID']||'?')+'] — '+[a.Building,a.Floor,'Room '+a.Room,'Bed '+a.Bed].join(', '));
+      const reservedDetails=(r.reservedRoomViolations||[]).map(a=>(a['Participant Name']||'Unknown')+' [ID '+(a['Participant ID']||'?')+'] — Bed '+a.Bed);
+      const duplicateDetails=(r.duplicateNames||[]).join(', ');
+      let detailText='';
+      if(localDetails.length) detailText+=' LOCAL ACTIVE: '+localDetails.join(' | ')+'.';
+      if(orphanDetails.length) detailText+=' ORPHAN ACTIVE: '+orphanDetails.join(' | ')+'.';
+      if(reservedDetails.length) detailText+=' PROTECTED ROOM: '+reservedDetails.join(' | ')+'.';
+      if(duplicateDetails) detailText+=' DUPLICATE NAMES: '+duplicateDetails+'.';
+      status.textContent='NON-DESTRUCTIVE PREVIEW — '+c.totalRecords+' records; '+c.localParticipants+' Local Participants; '+c.eligibleParticipants+' eligible; '+c.activeAllotments+' active allotments; '+unassigned+' eligible participants unallotted. '+(issues.length?'Findings: '+issues.join('; ')+'.':'No listed reconciliation issues.')+detailText+' No data was changed.';
     });
   });
   document.getElementById('awaasRunAuto').addEventListener('click',async function(){
