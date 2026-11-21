@@ -193,6 +193,52 @@ function doPost(e) {
         JSON.stringify({total:categoryValues.length,local:localNames.length,eligible:eligibleCount,localNames:localNames}));
       return json_({success:true,marked:localNames.length,localParticipants:localNames.length,eligible:eligibleCount,total:categoryValues.length,names:localNames,message:'Participant categories repaired. Existing allotments were not changed.'});
     }
+    if (action === 'releaseLocalAllotments') {
+      if (String(body.confirm || '') !== 'RELEASE_LOCAL_ACTIVE_ALLOTMENTS') {
+        throw new Error('Explicit confirmation is required. No records were changed.');
+      }
+      const ss = db_();
+      const people = readObjects_(ss.getSheetByName('Participants'));
+      const localById = {};
+      people.forEach(p => {
+        if (!isAccommodationEligible_(p)) {
+          const id = String(p['Participant ID'] || '').trim();
+          if (!id) throw new Error('A Local Participant has no Participant ID. No records were changed.');
+          if (localById[id]) throw new Error('Duplicate Local Participant ID: ' + id + '. No records were changed.');
+          localById[id] = p;
+        }
+      });
+      const sh = ss.getSheetByName('Allotments');
+      const values = sh.getDataRange().getValues();
+      const headers = values[0].map(String);
+      const idCol = headers.indexOf('Participant ID');
+      const statusCol = headers.indexOf('Allotment Status');
+      const updatedCol = headers.indexOf('Updated At');
+      const allotmentIdCol = headers.indexOf('Allotment ID');
+      const nameCol = headers.indexOf('Participant Name');
+      if ([idCol,statusCol,updatedCol,allotmentIdCol].some(x => x < 0)) throw new Error('Allotments sheet headers are incomplete. No records were changed.');
+      const matches = [];
+      const seen = {};
+      for (let i=1;i<values.length;i++) {
+        const pid = String(values[i][idCol] || '').trim();
+        if (String(values[i][statusCol]) === 'Active' && localById[pid]) {
+          if (seen[pid]) throw new Error('Local participant has multiple active allotments: ' + (localById[pid].Name || pid) + '. No records were changed.');
+          seen[pid] = true;
+          matches.push({row:i+1,id:String(values[i][allotmentIdCol]),participantId:pid,name:String(values[i][nameCol] || localById[pid].Name || pid),building:values[i][headers.indexOf('Building')],floor:values[i][headers.indexOf('Floor')],room:values[i][headers.indexOf('Room')],bed:values[i][headers.indexOf('Bed')]});
+        }
+      }
+      if (!matches.length) return json_({success:true,released:0,records:[],message:'No active allotments were found for Local Participants.'});
+      const now = new Date();
+      matches.forEach(m => {
+        values[m.row-1][statusCol] = 'Released';
+        values[m.row-1][updatedCol] = now;
+      });
+      // One batch write; only the two affected columns are updated.
+      sh.getRange(2,statusCol+1,values.length-1,1).setValues(values.slice(1).map(r=>[r[statusCol]]));
+      sh.getRange(2,updatedCol+1,values.length-1,1).setValues(values.slice(1).map(r=>[r[updatedCol]]));
+      audit_(ss,'ADMIN','RELEASE_LOCAL_ALLOTMENTS','ALLOTMENTS','BATCH',JSON.stringify(matches));
+      return json_({success:true,released:matches.length,records:matches,message:'Active allotments for Local Participants were released. Other allotments were not changed.'});
+    }
     if (action === 'autoAllocate') {
       const result = autoAllocate_(db_());
       return json_({success:true, ...result});
