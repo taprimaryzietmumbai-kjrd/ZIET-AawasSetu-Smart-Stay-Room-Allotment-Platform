@@ -21,9 +21,12 @@ const TOKEN_PROPERTY_PREFIX = 'AWAASSETU_TOKEN_';
 function isLocalParticipant_(p) {
   const name = String(p.name || p.Name || '').toLowerCase().replace(/[^a-z]/g, '');
   const school = String(p.school || p.School || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Mumbai-area local participants: Colaba, IIT Powai, Panvel, Ambernath,
+  // INS Hamla, Thane and Koliwada. Match school/location text, not region alone.
   return name === 'nikhilkesharwani' || name === 'sachinhpardeshi' ||
     /kendriyavidyalaya(no2|number2)colaba/.test(school) ||
-    /kendriyavidyalayaiitpowai/.test(school);
+    /kendriyavidyalayaiitpowai/.test(school) ||
+    /(panvel|ambernath|hamla|thane|koliwada)/.test(school);
 }
 
 const SHEETS = {
@@ -387,17 +390,33 @@ function autoAllocate_(ss) {
   }
   function placeGroup(group,g,preferGround){
     const school=String(group[0].School||'');
-    let candidates=rooms.filter(r=>freeBeds(r)>=group.length&&(!currentGender(r)||currentGender(r)===g)&&(!group.some(rp)||currentCount(r)===0));
-    candidates.sort((a,b)=>{
-      const ag=preferGround&&a.Floor==='Ground'?0:1, bg=preferGround&&b.Floor==='Ground'?0:1;
-      const as=school&&roomMap[roomKey(a)]&&roomMap[roomKey(a)].some(x=>String(x.person.School||'')===school)?0:1;
-      const bs=school&&roomMap[roomKey(b)]&&roomMap[roomKey(b)].some(x=>String(x.person.School||'')===school)?0:1;
-      return ag-bg||as-bs||roomSort(a,b);
-    });
-    const room=candidates[0];
-    if(!room) throw new Error('No compatible room space for '+group.map(p=>p.Name).join(', ')+'. Existing allotments were preserved; no new records were written.');
+    const resourceGroup=group.some(rp);
+    function candidatesFor(minBeds){
+      return rooms.filter(r=>freeBeds(r)>=minBeds&&(!currentGender(r)||currentGender(r)===g)&&(!resourceGroup||currentCount(r)===0));
+    }
+    function sortCandidates(candidates){
+      candidates.sort((a,b)=>{
+        const ag=preferGround&&a.Floor==='Ground'?0:1, bg=preferGround&&b.Floor==='Ground'?0:1;
+        const ac=currentCount(a)>0?0:1, bc=currentCount(b)>0?0:1;
+        const as=school&&roomMap[roomKey(a)]&&roomMap[roomKey(a)].some(x=>String(x.person.School||'')===school)?0:1;
+        const bs=school&&roomMap[roomKey(b)]&&roomMap[roomKey(b)].some(x=>String(x.person.School||'')===school)?0:1;
+        return ag-bg||as-bs||ac-bc||roomSort(a,b);
+      });
+      return candidates;
+    }
+    // Resource persons retain their protected double-occupancy grouping in an otherwise empty room.
+    if(resourceGroup){
+      const room=sortCandidates(candidatesFor(group.length))[0];
+      if(!room) throw new Error('No compatible double-occupancy room for '+group.map(p=>p.Name).join(', ')+'. Existing allotments were preserved; no new records were written.');
+      group.forEach(p=>addToRoom(p,room,'Resource Person — double occupancy'));
+      return;
+    }
+    // Regular participants may be split across compatible rooms. This avoids
+    // rejecting a group of three merely because the remaining beds are fragmented.
     group.forEach(p=>{
-      let note=manisha(p)?'Single occupancy — A1 Ground Floor Room 2':rp(p)?'Resource Person — double occupancy':group.length===2?'Double occupancy':'Triple occupancy';
+      const room=sortCandidates(candidatesFor(1))[0];
+      if(!room) throw new Error('No compatible room space for '+p.Name+'. Existing allotments were preserved; no new records were written.');
+      let note=manisha(p)?'Single occupancy — A1 Ground Floor Room 2':group.length===1?'Single occupancy':group.length===2?'Double occupancy':'Triple occupancy (maximum 3 per room)';
       if(ground(p)) note+='; Ground Floor Priority';
       addToRoom(p,room,note);
     });
@@ -430,8 +449,7 @@ function autoAllocate_(ss) {
     const schools={}; pool.forEach(p=>{const k=String(p.School||'Unknown');(schools[k]=schools[k]||[]).push(p);});
     let ordered=[];Object.keys(schools).sort().forEach(k=>ordered=ordered.concat(schools[k]));
     while(ordered.length){
-      let size=ordered.length%3===1?2:Math.min(3,ordered.length);
-      if(ordered.length===1) throw new Error('One '+g+' participant remains without a same-gender roommate: '+ordered[0].Name+'. Existing allotments preserved; no new records written.');
+      const size=Math.min(3,ordered.length);
       placeGroup(ordered.splice(0,size),g,false);
     }
   });
