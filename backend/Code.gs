@@ -352,7 +352,7 @@ function allocationPreview_(ss) {
     unallottedParticipants:unallotted.map(p=>({id:p['Participant ID'],name:p.Name,school:p.School,gender:p.Gender,role:p.Role})),
     activeAllotments:active
   };
-  result.safeForFreshAllocation=duplicateParticipantIds.length===0 && duplicateActiveAllotments.length===0 && duplicateActiveBeds.length===0 && orphanAllotments.length===0 && localAllotted.length===0 && overCapacity.length===0 && genderConflicts.length===0 && reservedRoomViolations.length===0;
+  result.safeForFreshAllocation=duplicateParticipantIds.length===0 && duplicateNames.length===0 && duplicateActiveAllotments.length===0 && duplicateActiveBeds.length===0 && orphanAllotments.length===0 && localAllotted.length===0 && overCapacity.length===0 && genderConflicts.length===0 && reservedRoomViolations.length===0;
   return result;
 }
 
@@ -371,7 +371,17 @@ function autoAllocate_(ss) {
   const manisha=p=>norm(p.Name)==='manishavivekmahajan';
   const rp=p=>/resource person|resource associate/i.test(String(p.Role||''));
   const ground=p=>['rdparaskar','santoshvishramnathe','manishavivekmahajan'].includes(norm(p.Name));
-  const participantById={}; people.forEach(p=>{const id=String(p['Participant ID']||'');if(!id)throw new Error('Missing Participant ID for '+p.Name);if(participantById[id])throw new Error('Duplicate Participant ID: '+id);participantById[id]=p;});
+  const participantById={}, participantNames={};
+  people.forEach(p=>{
+    const id=String(p['Participant ID']||'');
+    if(!id) throw new Error('Missing Participant ID for '+p.Name);
+    if(participantById[id]) throw new Error('Duplicate Participant ID: '+id);
+    participantById[id]=p;
+    const n=normalizedPersonName_(p);
+    if(n) { if(!participantNames[n]) participantNames[n]=[]; participantNames[n].push(p); }
+  });
+  const duplicateParticipantNames=Object.keys(participantNames).filter(n=>participantNames[n].length>1);
+  if(duplicateParticipantNames.length) throw new Error('Duplicate participant names need identity verification before allocation: '+duplicateParticipantNames.join(', ')+'. Confirm whether these are duplicate imports or different people. No records changed.');
   const sh=ss.getSheetByName('Allotments');
   const allAllotments=readObjects_(sh), active=allAllotments.filter(a=>String(a['Allotment Status'])==='Active');
   const activeById={}, bedKeys={}, roomMap={}, activeNames={};
