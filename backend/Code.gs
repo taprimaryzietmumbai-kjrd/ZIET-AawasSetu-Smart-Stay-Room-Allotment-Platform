@@ -21,12 +21,22 @@ const TOKEN_PROPERTY_PREFIX = 'AWAASSETU_TOKEN_';
 function isLocalParticipant_(p) {
   const name = String(p.name || p.Name || '').toLowerCase().replace(/[^a-z]/g, '');
   const school = String(p.school || p.School || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  // Mumbai-area local participants: Colaba, IIT Powai, Panvel, Ambernath,
-  // INS Hamla, Thane and Koliwada. Match school/location text, not region alone.
+  // Explicit local-name exceptions plus Mumbai-area school/location rules.
   return name === 'nikhilkesharwani' || name === 'sachinhpardeshi' ||
     /kendriyavidyalaya(no2|number2)colaba/.test(school) ||
     /kendriyavidyalayaiitpowai/.test(school) ||
     /(panvel|ambernath|hamla|thane|koliwada)/.test(school);
+}
+function isAccommodationEligible_(p) {
+  const category = String(p['Participation Category'] || p.participationCategory || '').trim().toLowerCase();
+  const role = String(p.Role || p.role || '').trim().toLowerCase();
+  return category !== 'local participants' && role !== 'local participant' && !isLocalParticipant_(p);
+}
+function participantKey_(p) {
+  return String(p['Participant ID'] || p.id || '').trim();
+}
+function normalizedPersonName_(p) {
+  return String(p.Name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 const SHEETS = {
@@ -239,7 +249,7 @@ function summary_(ss) {
   const rooms = readObjects_(ss.getSheetByName('Rooms'));
   const people = readObjects_(ss.getSheetByName('Participants'));
   const allotments = readObjects_(ss.getSheetByName('Allotments')).filter(r => String(r['Allotment Status'])==='Active');
-  const local = people.filter(p => String(p['Participation Category'])==='Local Participants').length;
+  const local = people.filter(p => !isAccommodationEligible_(p)).length;
   const eligible = people.length-local;
   const occ = {};
   allotments.forEach(a => { const k=[a.Building,a.Floor,a.Room].join('|'); occ[k]=(occ[k]||0)+1; });
@@ -284,10 +294,18 @@ function ensureHeaders_(sh, required) {
   const existing = sh.getRange(1,1,1,last).getValues()[0].map(String);
   required.forEach(h => { if (existing.indexOf(h) < 0) { sh.getRange(1,sh.getLastColumn()+1).setValue(h); } });
 }
+function bedKeysForPreview_(allotments) {
+  const counts={};
+  allotments.forEach(a=>{
+    const key=[a.Building,a.Floor,a.Room,a.Bed].join('|');
+    counts[key]=(counts[key]||0)+1;
+  });
+  return counts;
+}
 function allocationPreview_(ss) {
   const allPeople=readObjects_(ss.getSheetByName('Participants'));
-  const eligible=allPeople.filter(p=>String(p['Participation Category']||'')!=='Local Participants' && String(p.Role||'Participant')!=='Local Participant');
-  const local=allPeople.filter(p=>String(p['Participation Category']||'')==='Local Participants');
+  const eligible=allPeople.filter(isAccommodationEligible_);
+  const local=allPeople.filter(p=>!isAccommodationEligible_(p));
   const active=readObjects_(ss.getSheetByName('Allotments')).filter(a=>String(a['Allotment Status'])==='Active');
   const ids={}; eligible.forEach(p=>{const id=String(p['Participant ID']||'');ids[id]=(ids[id]||0)+1;});
   const names={}; eligible.forEach(p=>{const n=String(p.Name||'').trim().toLowerCase();names[n]=(names[n]||0)+1;});
@@ -300,7 +318,8 @@ function allocationPreview_(ss) {
   const duplicateActiveAllotments=Object.keys(allottedIds).filter(id=>allottedIds[id]>1);
   const roomCounts={}; active.forEach(a=>{const k=[a.Building,a.Floor,a.Room].join('|');roomCounts[k]=(roomCounts[k]||0)+1;});
   const overCapacity=Object.keys(roomCounts).filter(k=>roomCounts[k]>3);
-  const localAllotted=active.filter(a=>local.some(p=>String(p['Participant ID'])===String(a['Participant ID'])));
+  const localIds={}; local.forEach(p=>{localIds[String(p['Participant ID'])]=true;});
+  const localAllotted=active.filter(a=>localIds[String(a['Participant ID'])]);
   const genderConflicts=[];
   const roomPeople={};
   active.forEach(a=>{const k=[a.Building,a.Floor,a.Room].join('|');(roomPeople[k]=roomPeople[k]||[]).push(a);});
@@ -314,27 +333,33 @@ function allocationPreview_(ss) {
   });
   const rps=eligible.filter(p=>/resource person|resource associate/i.test(String(p.Role||'')));
   const rooms=readObjects_(ss.getSheetByName('Rooms')).filter(r=>String(r.Allotable)==='Yes');
+  const reservedRoomKey='A1|Ground|2';
+  const reservedRoomOccupants=active.filter(a=>[a.Building,a.Floor,String(a.Room)].join('|')===reservedRoomKey);
+  const reservedRoomViolations=reservedRoomOccupants.filter(a=>normalizedPersonName_({Name:a['Participant Name']})!=='manishavivekmahajan');
+  const duplicateActiveBeds=Object.keys(bedKeysForPreview_(active)).filter(k=>bedKeysForPreview_(active)[k]>1);
   const result={
     success:true,
     counts:{totalRecords:allPeople.length,localParticipants:local.length,eligibleParticipants:eligible.length,activeAllotments:active.length,unallottedEligible:unallotted.length,resourcePersons:rps.length,allotableRooms:rooms.length,allotableBeds:rooms.reduce((n,r)=>n+Number(r.Beds||3),0)},
     duplicateParticipantIds:duplicateParticipantIds,
     duplicateNames:duplicateNames,
     duplicateActiveAllotments:duplicateActiveAllotments,
+    duplicateActiveBeds:duplicateActiveBeds,
     orphanAllotments:orphanAllotments,
     localParticipantsAllotted:localAllotted,
     overCapacityRooms:overCapacity,
     genderConflictRooms:genderConflicts,
+    reservedRoomViolations:reservedRoomViolations,
     unallottedParticipants:unallotted.map(p=>({id:p['Participant ID'],name:p.Name,school:p.School,gender:p.Gender,role:p.Role})),
     activeAllotments:active
   };
-  result.safeForFreshAllocation=active.length===0 && duplicateParticipantIds.length===0 && localAllotted.length===0 && overCapacity.length===0;
+  result.safeForFreshAllocation=duplicateParticipantIds.length===0 && duplicateActiveAllotments.length===0 && duplicateActiveBeds.length===0 && orphanAllotments.length===0 && localAllotted.length===0 && overCapacity.length===0 && genderConflicts.length===0 && reservedRoomViolations.length===0;
   return result;
 }
 
 function autoAllocate_(ss) {
-  // Incremental, non-destructive allocation: existing Active allotments are never released or rewritten.
+  // Incremental, non-destructive allocation. Refuse to add beds until existing data passes reconciliation.
   const allPeople=readObjects_(ss.getSheetByName('Participants'));
-  const people=allPeople.filter(p=>String(p['Participation Category']||'')!=='Local Participants' && String(p.Role||'Participant')!=='Local Participant');
+  const people=allPeople.filter(isAccommodationEligible_);
   if(!people.length) throw new Error('Import participant records before automatic allocation.');
   const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
   const genderOf=p=>{
@@ -349,12 +374,22 @@ function autoAllocate_(ss) {
   const participantById={}; people.forEach(p=>{const id=String(p['Participant ID']||'');if(!id)throw new Error('Missing Participant ID for '+p.Name);if(participantById[id])throw new Error('Duplicate Participant ID: '+id);participantById[id]=p;});
   const sh=ss.getSheetByName('Allotments');
   const allAllotments=readObjects_(sh), active=allAllotments.filter(a=>String(a['Allotment Status'])==='Active');
-  const activeById={}, bedKeys={}, roomMap={};
+  const activeById={}, bedKeys={}, roomMap={}, activeNames={};
   active.forEach(a=>{
     const id=String(a['Participant ID']||''), p=participantById[id];
-    if(!p) throw new Error('Existing allotment has no eligible participant match: '+(a['Participant Name']||id)+'. Reconcile manually; no records changed.');
+    if(!p) {
+      const sourcePerson=allPeople.find(x=>String(x['Participant ID']||'')===id);
+      if(sourcePerson && !isAccommodationEligible_(sourcePerson))
+        throw new Error('Local participant still has an active allotment: '+(a['Participant Name']||id)+'. Run Local Participant marking and reconcile this existing allotment before allocating. No records changed.');
+      throw new Error('Existing allotment has no eligible participant match: '+(a['Participant Name']||id)+'. Reconcile manually; no records changed.');
+    }
     if(activeById[id]) throw new Error('Participant has multiple active allotments: '+p.Name+'. No records changed.');
     activeById[id]=true;
+    const personName=normalizedPersonName_(p);
+    if(personName) {
+      if(!activeNames[personName]) activeNames[personName]=[];
+      activeNames[personName].push(a);
+    }
     const bed=[a.Building,a.Floor,a.Room,a.Bed].join('|');
     if(bedKeys[bed]) throw new Error('Duplicate occupied bed: '+bed+'. No records changed.');
     bedKeys[bed]=true;
@@ -371,6 +406,10 @@ function autoAllocate_(ss) {
     const gs={}; occupants.forEach(x=>gs[genderOf(x.person)]=true);
     if(Object.keys(gs).length>1) throw new Error('Existing room has mixed genders: '+k+'. Reconcile before allocation; no records changed.');
   });
+  const duplicateActiveNames=Object.keys(activeNames).filter(n=>activeNames[n].length>1);
+  if(duplicateActiveNames.length) throw new Error('Multiple active allotments share the same normalized participant name: '+duplicateActiveNames.join(', ')+'. Verify whether these are duplicate imports or different people before allocating. No records changed.');
+  const reservedExisting=(roomMap['A1|Ground|2']||[]).filter(x=>!manisha(x.person));
+  if(reservedExisting.length) throw new Error('A1 Ground Floor Room 2 is not exclusively reserved for Manisha Vivek Mahajan. Reconcile existing occupants first. No records changed.');
   const pending=people.filter(p=>!activeById[String(p['Participant ID'])]);
   if(!pending.length) return {success:true,assigned:0,alreadyAllotted:active.length,roomsUsed:Object.keys(roomMap).length,occupiedBeds:active.length,localParticipantsExcluded:allPeople.length-people.length,message:'All eligible participants already have active allotments.'};
   // Validate all genders before making any writes.
@@ -457,7 +496,7 @@ function autoAllocate_(ss) {
   // One bulk write only after all validations and placement decisions succeed.
   const rows=assignments.map(a=>[a['Allotment ID'],a['Participant ID'],a['Participant Name'],a.Building,a.Floor,a.Room,a.Bed,a['Allotment Status'],a['Allotted At'],a['Updated At'],a.Remarks]);
   if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,rows[0].length).setValues(rows);
-  const localCount=allPeople.filter(p=>String(p['Participation Category'])==='Local Participants').length;
+  const localCount=allPeople.filter(p=>!isAccommodationEligible_(p)).length;
   audit_(ss,'ADMIN','INCREMENTAL_AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({newlyAssigned:assignments.length,previouslyActive:active.length,roomsUsed:Object.keys(roomMap).length,localExcluded:localCount}));
   return {success:true,assigned:assignments.length,alreadyAllotted:active.length,roomsUsed:Object.keys(roomMap).length,occupiedBeds:active.length+assignments.length,localParticipantsExcluded:localCount,assignments:assignments};
 }
