@@ -208,7 +208,7 @@ function summary_(ss) {
   const eligible = people.length-local;
   const occ = {};
   allotments.forEach(a => { const k=[a.Building,a.Floor,a.Room].join('|'); occ[k]=(occ[k]||0)+1; });
-  rooms.forEach(r => { const k=[r.Building,r.Floor,r.Room].join('|'); r.Occupied=occ[k]||0; r.Available=Number(r.Beds||3)-r.Occupied; });
+  rooms.forEach(r => { const k=[r.Building,r.Floor,r.Room].join('|'); r.Occupied=occ[k]||0; r.Available=Number(r.Beds||3)-r.Occupied; r.Status=String(r.Allotable)==='No'?'Excluded':(r.Occupied?'Occupied '+r.Occupied+'/'+Number(r.Beds||3):'Available'); });
   return {success:true,capacity:{buildings:3,floors:12,rooms:35,beds:105},participants:people.length,localParticipants:local,eligibleParticipants:eligible,activeAllotments:allotments.length,occupiedBeds:allotments.length,availableBeds:105-allotments.length,rooms:rooms,allotments:allotments};
 }
 function readObjects_(sh) {
