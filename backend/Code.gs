@@ -302,6 +302,7 @@ function autoAllocate_(ss) {
     const schoolGroups={};
     remainingNonRps.forEach(p=>{const k=String(p.School||'Unknown');(schoolGroups[k]=schoolGroups[k]||[]).push(p);});
     let pool=[];Object.keys(schoolGroups).sort().forEach(k=>pool=pool.concat(schoolGroups[k]));
+    if(pool.length===1) throw new Error('One '+g+' participant remains after Resource Person pairing; double occupancy cannot be satisfied without another same-gender participant.');
     const roomCount=Math.ceil(pool.length/3), doubleRooms=roomCount*3-pool.length;
     const tripleCount=pool.length-doubleRooms*2;
     const triples=pool.splice(0,tripleCount), doubles=pool;
