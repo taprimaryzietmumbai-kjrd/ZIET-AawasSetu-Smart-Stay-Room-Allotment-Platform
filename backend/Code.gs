@@ -239,6 +239,10 @@ function doPost(e) {
       audit_(ss,'ADMIN','RELEASE_LOCAL_ALLOTMENTS','ALLOTMENTS','BATCH',JSON.stringify(matches));
       return json_({success:true,released:matches.length,records:matches,message:'Active allotments for Local Participants were released. Other allotments were not changed.'});
     }
+    if (action === 'repairProtectedRoom') {
+      const result = repairProtectedRoom_(db_(), String(body.confirm || '') === 'MOVE_ONLY_THE_TWO_NAMED_OCCUPANTS');
+      return json_({success:true, ...result});
+    }
     if (action === 'autoAllocate') {
       const result = autoAllocate_(db_());
       return json_({success:true, ...result});
@@ -579,4 +583,104 @@ function autoAllocate_(ss) {
   const localCount=allPeople.filter(p=>!isAccommodationEligible_(p)).length;
   audit_(ss,'ADMIN','INCREMENTAL_AUTO_ALLOCATE','ALLOTMENTS','BATCH',JSON.stringify({newlyAssigned:assignments.length,previouslyActive:active.length,roomsUsed:Object.keys(roomMap).length,localExcluded:localCount}));
   return {success:true,assigned:assignments.length,alreadyAllotted:active.length,roomsUsed:Object.keys(roomMap).length,occupiedBeds:active.length+assignments.length,localParticipantsExcluded:localCount,assignments:assignments};
+}
+
+
+/**
+ * Safely relocates only Mukesh Kumar (TGTAE-4) and Anjana Sharma (TGTAE-11)
+ * out of Manisha Vivek Mahajan's protected single room. Preview by default;
+ * commit only with the exact confirmation token.
+ */
+function repairProtectedRoom_(ss, commit) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) throw new Error('Another allotment operation is running. Try again shortly.');
+  try {
+    const people = readObjects_(ss.getSheetByName('Participants'));
+    const allotSh = ss.getSheetByName('Allotments');
+    const raw = allotSh.getDataRange().getValues();
+    const headers = raw[0].map(String);
+    const col = h => headers.indexOf(h);
+    const required = ['Allotment ID','Participant ID','Building','Floor','Room','Bed','Allotment Status','Updated At','Remarks'];
+    required.forEach(h => { if (col(h) < 0) throw new Error('Missing Allotments header: '+h+'. No records changed.'); });
+    const byId = {};
+    people.forEach(p => { const id=String(p['Participant ID']||'').trim(); if(id) { if(byId[id]) throw new Error('Duplicate participant ID '+id+'. No records changed.'); byId[id]=p; } });
+    const expected = {'TGTAE-4':true,'TGTAE-11':true};
+    const targets = [];
+    for (let i=1;i<raw.length;i++) {
+      const row=raw[i];
+      if (String(row[col('Allotment Status')])!=='Active') continue;
+      const pid=String(row[col('Participant ID')]||'').trim();
+      const key=[String(row[col('Building')]),String(row[col('Floor')]),String(row[col('Room')])].join('|');
+      if (key==='A1|Ground|2' && pid!=='') {
+        if (pid==='') continue;
+        if (pid==='') throw new Error('Blank participant ID in protected room. No records changed.');
+        if (pid!=='TGTAE-4' && pid!=='TGTAE-11' && normalizedPersonName_({Name:row[col('Participant Name')]})!=='manishavivekmahajan')
+          throw new Error('Unexpected occupant '+pid+' in protected room. No records changed.');
+        if (expected[pid]) targets.push({row:i+1,id:String(row[col('Allotment ID')]),pid:pid,name:String(row[col('Participant Name')]),oldBed:String(row[col('Bed')])});
+      }
+    }
+    if (targets.length!==2 || !targets.some(x=>x.pid==='TGTAE-4') || !targets.some(x=>x.pid==='TGTAE-11'))
+      throw new Error('Expected exactly TGTAE-4 and TGTAE-11 in A1 Ground Room 2. Current data differs; no records changed.');
+    const manisha=people.filter(p=>normalizedPersonName_(p)==='manishavivekmahajan');
+    if(manisha.length!==1) throw new Error('Manisha Vivek Mahajan must match exactly one participant record. No records changed.');
+    const genderOf=p=>{
+      const g=String(p.Gender||'').trim().toLowerCase();
+      if(/^(f|female|woman|women)$/.test(g)) return 'Female';
+      if(/^(m|male|man|men)$/.test(g)) return 'Male';
+      throw new Error('Gender needs verification for '+p.Name+' ('+(p.Gender||'blank')+'). No records changed.');
+    };
+    targets.forEach(t=>{ if(!byId[t.pid]) throw new Error('Participant record missing for '+t.pid+'. No records changed.'); t.gender=genderOf(byId[t.pid]); });
+    const roomRows=readObjects_(ss.getSheetByName('Rooms')).filter(r=>String(r.Allotable)==='Yes');
+    const roomMap={};
+    roomRows.forEach(r=>roomMap[[r.Building,r.Floor,String(r.Room)].join('|')]=r);
+    const active=[];
+    for(let i=1;i<raw.length;i++) if(String(raw[i][col('Allotment Status')])==='Active') {
+      const pid=String(raw[i][col('Participant ID')]||'').trim();
+      if(targets.some(t=>t.pid===pid)) continue;
+      const p=byId[pid];
+      if(!p) throw new Error('Existing active allotment has no participant match: '+pid+'. No records changed.');
+      active.push({pid,gender:genderOf(p),building:String(raw[i][col('Building')]),floor:String(raw[i][col('Floor')]),room:String(raw[i][col('Room')]),bed:String(raw[i][col('Bed')])});
+    }
+    const occupied={};
+    active.forEach(a=>{const k=[a.building,a.floor,a.room].join('|');(occupied[k]=occupied[k]||[]).push(a);});
+    const plan=[];
+    const floorOrder=['Ground','First','Second','Third'], buildingOrder=['A1','A2','A3'];
+    targets.sort((a,b)=>a.pid.localeCompare(b.pid));
+    targets.forEach(t=>{
+      const candidates=roomRows.filter(r=>{
+        const k=[r.Building,r.Floor,String(r.Room)].join('|');
+        if(k==='A1|Ground|2') return false;
+        const occupants=occupied[k]||[];
+        if(occupants.length>=Number(r.Beds||3)) return false;
+        return occupants.every(o=>o.gender===t.gender);
+      }).sort((a,b)=>{
+        const ak=[a.Building,a.Floor,String(a.Room)].join('|'), bk=[b.Building,b.Floor,String(b.Room)].join('|');
+        const ao=(occupied[ak]||[]).length, bo=(occupied[bk]||[]).length;
+        return bo-ao || floorOrder.indexOf(a.Floor)-floorOrder.indexOf(b.Floor) || buildingOrder.indexOf(a.Building)-buildingOrder.indexOf(b.Building) || Number(a.Room)-Number(b.Room);
+      });
+      const room=candidates[0];
+      if(!room) throw new Error('No compatible vacant bed for '+t.name+' ('+t.gender+'). No records changed.');
+      const k=[room.Building,room.Floor,String(room.Room)].join('|');
+      const used=(occupied[k]||[]).map(o=>Number(o.bed)).filter(n=>Number.isFinite(n)&&n>0);
+      let bed=1; while(used.indexOf(bed)>=0 && bed<=Number(room.Beds||3)) bed++;
+      if(bed>Number(room.Beds||3)) throw new Error('No free bed number in '+k+'. No records changed.');
+      const dest={building:String(room.Building),floor:String(room.Floor),room:String(room.Room),bed:String(bed)};
+      plan.push({participantId:t.pid,name:t.name,from:'A1 / Ground / Room 2 / Bed '+t.oldBed,to:dest.building+' / '+dest.floor+' / Room '+dest.room+' / Bed '+dest.bed});
+      (occupied[k]=occupied[k]||[]).push({pid:t.pid,gender:t.gender,bed:dest.bed});
+      t.destination=dest;
+    });
+    if(!commit) return {previewOnly:true,changes:plan,message:'Preview only. No data changed. Confirm with the protected-room repair action to apply exactly these two moves.'};
+    const now=new Date();
+    targets.forEach(t=>{
+      const d=t.destination;
+      allotSh.getRange(t.row,col('Building')+1,1,4).setValues([[d.building,d.floor,d.room,d.bed]]);
+      allotSh.getRange(t.row,col('Updated At')+1).setValue(now);
+      const oldRemark=String(raw[t.row-1][col('Remarks')]||'');
+      allotSh.getRange(t.row,col('Remarks')+1).setValue((oldRemark?oldRemark+'; ':'')+'Moved out of Manisha protected single room by controlled repair');
+    });
+    audit_(ss,'ADMIN','REPAIR_MANISHA_PROTECTED_ROOM','ALLOTMENTS','TGTAE-4,TGTAE-11',JSON.stringify(plan));
+    return {previewOnly:false,moved:targets.length,changes:plan,message:'Only the two named allotment rows were relocated. All other allotments were left unchanged.'};
+  } finally {
+    lock.releaseLock();
+  }
 }
