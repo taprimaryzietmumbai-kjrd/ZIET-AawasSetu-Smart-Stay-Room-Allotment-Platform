@@ -84,6 +84,9 @@ function doGet(e) {
     } else if (action === 'allotments') {
       authorize_(e.parameter.token);
       result = {success:true, allotments: readObjects_(db_().getSheetByName('Allotments')).filter(r => String(r['Allotment Status'])==='Active')};
+    } else if (action === 'allocationPreview') {
+      authorize_(e.parameter.token);
+      result = allocationPreview_(db_());
     } else {
       result = {success:false, error:'Unknown action'};
     }
@@ -249,6 +252,53 @@ function ensureHeaders_(sh, required) {
   const existing = sh.getRange(1,1,1,last).getValues()[0].map(String);
   required.forEach(h => { if (existing.indexOf(h) < 0) { sh.getRange(1,sh.getLastColumn()+1).setValue(h); } });
 }
+function allocationPreview_(ss) {
+  const allPeople=readObjects_(ss.getSheetByName('Participants'));
+  const eligible=allPeople.filter(p=>String(p['Participation Category']||'')!=='Local Participants' && String(p.Role||'Participant')!=='Local Participant');
+  const local=allPeople.filter(p=>String(p['Participation Category']||'')==='Local Participants');
+  const active=readObjects_(ss.getSheetByName('Allotments')).filter(a=>String(a['Allotment Status'])==='Active');
+  const ids={}; eligible.forEach(p=>{const id=String(p['Participant ID']||'');ids[id]=(ids[id]||0)+1;});
+  const names={}; eligible.forEach(p=>{const n=String(p.Name||'').trim().toLowerCase();names[n]=(names[n]||0)+1;});
+  const eligibleById={}; eligible.forEach(p=>eligibleById[String(p['Participant ID'])]=p);
+  const allottedIds={}; active.forEach(a=>{const id=String(a['Participant ID']||'');allottedIds[id]=(allottedIds[id]||0)+1;});
+  const duplicateParticipantIds=Object.keys(ids).filter(id=>id && ids[id]>1);
+  const duplicateNames=Object.keys(names).filter(n=>n && names[n]>1);
+  const unallotted=eligible.filter(p=>!allottedIds[String(p['Participant ID'])]);
+  const orphanAllotments=active.filter(a=>!eligibleById[String(a['Participant ID'])]);
+  const duplicateActiveAllotments=Object.keys(allottedIds).filter(id=>allottedIds[id]>1);
+  const roomCounts={}; active.forEach(a=>{const k=[a.Building,a.Floor,a.Room].join('|');roomCounts[k]=(roomCounts[k]||0)+1;});
+  const overCapacity=Object.keys(roomCounts).filter(k=>roomCounts[k]>3);
+  const localAllotted=active.filter(a=>local.some(p=>String(p['Participant ID'])===String(a['Participant ID'])));
+  const genderConflicts=[];
+  const roomPeople={};
+  active.forEach(a=>{const k=[a.Building,a.Floor,a.Room].join('|');(roomPeople[k]=roomPeople[k]||[]).push(a);});
+  Object.keys(roomPeople).forEach(k=>{
+    const genders={};
+    roomPeople[k].forEach(a=>{
+      const p=eligibleById[String(a['Participant ID'])];
+      if(p){const g=String(p.Gender||'').trim().toLowerCase();if(g)genders[g]=true;}
+    });
+    if(Object.keys(genders).length>1) genderConflicts.push(k);
+  });
+  const rps=eligible.filter(p=>/resource person|resource associate/i.test(String(p.Role||'')));
+  const rooms=readObjects_(ss.getSheetByName('Rooms')).filter(r=>String(r.Allotable)==='Yes');
+  const result={
+    success:true,
+    counts:{totalRecords:allPeople.length,localParticipants:local.length,eligibleParticipants:eligible.length,activeAllotments:active.length,unallottedEligible:unallotted.length,resourcePersons:rps.length,allotableRooms:rooms.length,allotableBeds:rooms.reduce((n,r)=>n+Number(r.Beds||3),0)},
+    duplicateParticipantIds:duplicateParticipantIds,
+    duplicateNames:duplicateNames,
+    duplicateActiveAllotments:duplicateActiveAllotments,
+    orphanAllotments:orphanAllotments,
+    localParticipantsAllotted:localAllotted,
+    overCapacityRooms:overCapacity,
+    genderConflictRooms:genderConflicts,
+    unallottedParticipants:unallotted.map(p=>({id:p['Participant ID'],name:p.Name,school:p.School,gender:p.Gender,role:p.Role})),
+    activeAllotments:active
+  };
+  result.safeForFreshAllocation=active.length===0 && duplicateParticipantIds.length===0 && localAllotted.length===0 && overCapacity.length===0;
+  return result;
+}
+
 function autoAllocate_(ss) {
   const allPeople=readObjects_(ss.getSheetByName('Participants'));
   const people=allPeople.filter(p=>String(p['Participation Category']||'')!=='Local Participants' && String(p.Role||'Participant')!=='Local Participant');
