@@ -689,6 +689,7 @@ n>
    <div class="actions" style="margin-top:10px;flex-wrap:wrap">
     <button class="primary-btn" id="awaasImportSources" type="button">Import Selected Workbooks</button>
     <button class="primary-btn" id="awaasMarkLocals" type="button">Correct Local Participant Marking</button>
+    <button class="primary-btn" id="awaasReleaseLocals" type="button">Release Local Participants’ Existing Allotments</button>
     <button class="primary-btn" id="awaasPreview" type="button">Check Existing Allotments (Preview)</button>
     <button class="primary-btn" id="awaasRunAuto" type="button">Run Automatic Room Allocation</button>
     <button class="primary-btn" id="awaasRefreshLive" type="button">Refresh Live Occupancy</button>
@@ -2654,6 +2655,26 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       status.textContent='Local Participant marking corrected: '+r.marked+' record(s) updated. '+(r.names||[]).join(', ')+'. No allotments were changed.';
       apiGet('summary',showAdmin);
     }catch(e){status.textContent='Correction failed: '+e.message;}
+  });
+  document.getElementById('awaasReleaseLocals').addEventListener('click',function(){
+    const status=document.getElementById('awaasImportStatus');
+    if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
+    status.textContent='Verifying Local Participant allotments before release…';
+    apiGet('allocationPreview',async function(r){
+      if(!r||!r.success){status.textContent='Could not verify existing allotments: '+((r&&r.error)||'Unknown error');return;}
+      const rows=r.localParticipantsAllotted||[];
+      if(!rows.length){status.textContent='No active allotments found for Local Participants. Nothing was changed.';return;}
+      const details=rows.map(a=>(a['Participant Name']||'Unknown')+' — '+[a.Building,a.Floor,'Room '+a.Room,'Bed '+a.Bed].join(', ')).join('\n');
+      const message='The following '+rows.length+' Local Participant active allotment(s) will be released. Other participants’ allotments will remain untouched.\n\n'+details+'\n\nContinue?';
+      if(!confirm(message)){status.textContent='Cancelled. No allotments were changed.';return;}
+      status.textContent='Releasing only the verified Local Participant allotments…';
+      try{
+        const result=await apiPost({action:'releaseLocalAllotments',token:adminToken,confirm:'RELEASE_LOCAL_ACTIVE_ALLOTMENTS'});
+        if(!result.success) throw new Error(result.error||'Release failed');
+        status.textContent='Completed: '+result.released+' Local Participant allotment(s) released and recorded in AuditLog. No other allotments were changed.';
+        apiGet('summary',showAdmin);
+      }catch(e){status.textContent='Release failed: '+e.message;}
+    });
   });
   document.getElementById('awaasPreview').addEventListener('click',function(){
     const status=document.getElementById('awaasImportStatus');
