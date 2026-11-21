@@ -2665,9 +2665,12 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       if((r.localParticipantsAllotted||[]).length) issues.push((r.localParticipantsAllotted||[]).length+' Local Participants have active allotments');
       if((r.duplicateParticipantIds||[]).length) issues.push((r.duplicateParticipantIds||[]).length+' duplicate participant IDs');
       if((r.duplicateActiveAllotments||[]).length) issues.push((r.duplicateActiveAllotments||[]).length+' participants have multiple active allotments');
+      if((r.duplicateActiveBeds||[]).length) issues.push((r.duplicateActiveBeds||[]).length+' beds are assigned more than once');
       if((r.orphanAllotments||[]).length) issues.push((r.orphanAllotments||[]).length+' allotments lack an eligible participant');
       if((r.overCapacityRooms||[]).length) issues.push((r.overCapacityRooms||[]).length+' over-capacity rooms');
       if((r.genderConflictRooms||[]).length) issues.push((r.genderConflictRooms||[]).length+' mixed-gender rooms');
+      if((r.reservedRoomViolations||[]).length) issues.push((r.reservedRoomViolations||[]).length+' non-Manisha occupant(s) in her protected single room');
+      if((r.duplicateNames||[]).length) issues.push((r.duplicateNames||[]).length+' duplicate participant names require identity review');
       const unassigned=c.unallottedEligible||0;
       status.textContent='NON-DESTRUCTIVE PREVIEW — '+c.totalRecords+' records; '+c.localParticipants+' Local Participants; '+c.eligibleParticipants+' eligible; '+c.activeAllotments+' active allotments; '+unassigned+' eligible participants unallotted. '+(issues.length?'Findings: '+issues.join('; ')+'.':'No listed reconciliation issues.')+' No data was changed.';
     });
