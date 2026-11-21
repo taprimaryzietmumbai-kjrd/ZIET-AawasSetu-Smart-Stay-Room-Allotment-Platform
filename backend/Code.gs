@@ -263,8 +263,20 @@ function autoAllocate_(ss) {
   const normalize = v => String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
   const isFemale = p => /female|f$/.test(String(p.Gender||'').toLowerCase());
   const genders = {Female:people.filter(isFemale), Male:people.filter(p=>!isFemale(p))};
-  const single = p => /resource person|resource associate/i.test(String(p.Role||'')) || normalize(p.Name)==='manishavivekmahajan';
   const preferred = p => normalize(p.Name)==='manishavivekmahajan';
+  const isResource = p => /resource person|resource associate/i.test(String(p.Role||''));
+  const groundPriority = p => ['rdparaskar','santoshvishramnathe','manishavivekmahajan'].includes(normalize(p.Name));
+  // Honour the explicitly requested Manisha single room, then add RP singles only if capacity allows.
+  const singleSet = new Set();
+  const candidates = people.filter(p=>preferred(p)||isResource(p)).sort((a,b)=>(preferred(b)?1:0)-(preferred(a)?1:0));
+  function roomsNeeded(set) {
+    return ['Female','Male'].reduce((sum,g)=>{
+      const count=genders[g].length, singles=genders[g].filter(p=>set.has(String(p['Participant ID']))).length;
+      return sum + singles + Math.ceil((count-singles)/3);
+    },0);
+  }
+  candidates.forEach(p=>{const id=String(p['Participant ID']);singleSet.add(id);if(roomsNeeded(singleSet)>rooms.length)singleSet.delete(id);});
+  const single = p => singleSet.has(String(p['Participant ID']));
   const floorOrder = ['Ground','First','Second','Third'];
   const roomOrder = rooms.sort((a,b) => {
     const aPref = a.Building==='A1' && a.Floor==='Ground' && String(a.Room)==='2' ? -1 : 0;
@@ -276,13 +288,14 @@ function autoAllocate_(ss) {
   function takeRoom(gender, occupants, forcePreferred) {
     let room;
     if (forcePreferred) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')) && r.Building==='A1' && r.Floor==='Ground' && String(r.Room)==='2');
+    if (!room && occupants.some(groundPriority)) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')) && r.Floor==='Ground');
     if (!room) room = roomOrder.find(r=>!used.has([r.Building,r.Floor,r.Room].join('|')));
     if (!room) throw new Error('Insufficient rooms: '+assignments.length+' beds assigned for '+people.length+' eligible participants. Check gender split and single-room priorities.');
     const key=[room.Building,room.Floor,room.Room].join('|'); used.add(key);
     occupants.forEach((p,i)=>assignments.push({'Allotment ID':Utilities.getUuid(),'Participant ID':p['Participant ID'],'Participant Name':p.Name,'Building':room.Building,'Floor':room.Floor,'Room':room.Room,'Bed':i+1,'Allotment Status':'Active','Allotted At':new Date(),'Updated At':new Date(),'Remarks':single(p)?'Single-room priority':'Automatic allotment'}));
   }
   ['Female','Male'].forEach(g => {
-    const list=genders[g].slice().sort((a,b)=>(single(b)?1:0)-(single(a)?1:0) || (preferred(b)?1:0)-(preferred(a)?1:0) || String(a.School||'').localeCompare(String(b.School||'')));
+    const list=genders[g].slice().sort((a,b)=>(single(b)?1:0)-(single(a)?1:0) || (groundPriority(b)?1:0)-(groundPriority(a)?1:0) || (preferred(b)?1:0)-(preferred(a)?1:0) || String(a.School||'').localeCompare(String(b.School||'')));
     const singles=list.filter(single);
     singles.forEach(p=>takeRoom(g,[p],preferred(p)));
     const rest=list.filter(p=>!single(p));
@@ -292,13 +305,8 @@ function autoAllocate_(ss) {
     let pool=[];
     Object.keys(bySchool).sort().forEach(k=>pool=pool.concat(bySchool[k]));
     while(pool.length) {
-      const remainingRooms=roomOrder.length-used.size;
-      const remainingPeople=pool.length;
-      if (remainingRooms<=0) throw new Error('Room capacity exceeded while allocating '+g+' participants.');
-      let size=3;
-      if (remainingPeople<=remainingRooms) size=1;
-      else if (remainingPeople<=remainingRooms*2) size=2;
-      const group=pool.splice(0,size);
+      if (used.size>=roomOrder.length) throw new Error('Room capacity exceeded while allocating '+g+' participants.');
+      const group=pool.splice(0,3);
       takeRoom(g,group,false);
     }
   });
