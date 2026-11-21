@@ -683,33 +683,52 @@ n>
   <p class="note" id="awaasAdminWelcome">Secure administrator session active.</p>
   <div id="awaasAdminStats" class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"></div>
   <div class="section blue" style="margin:14px 0">
-   <h4 style="margin-top:0">📥 Import Workshop Participant Lists</h4>
-   <p class="note">Select the original PRT Music and TGT AE workbooks together. The app reads the sheets directly; it does not modify the source files or the Nameplate Generator spreadsheet.</p>
-   <input id="awaasSourceFiles" type="file" accept=".xlsx,.xls" multiple>
-   <div class="actions" style="margin-top:10px;flex-wrap:wrap">
-    <button class="primary-btn" id="awaasImportSources" type="button">Import Selected Workbooks</button>
-    <button class="primary-btn" id="awaasMarkLocals" type="button">Correct Local Participant Marking</button>
-    <button class="primary-btn" id="awaasReleaseLocals" type="button">Release Local Participants’ Existing Allotments</button>
-    <button class="primary-btn" id="awaasPreview" type="button">Check Existing Allotments (Preview)</button>
-    <button class="primary-btn" id="awaasRunAuto" type="button">Run Automatic Room Allocation</button>
-    <button class="primary-btn" id="awaasRefreshLive" type="button">Refresh Live Occupancy</button>
-    <button class="primary-btn" id="awaasPdf" type="button">📄 Download PDF</button>
+   <h4 style="margin:0 0 10px">⚡ Quick Actions</h4>
+   <div class="actions" style="margin:0;flex-wrap:wrap">
+    <button class="primary-btn" id="awaasRefreshLive" type="button">↻ Refresh Dashboard</button>
+    <button class="primary-btn" id="awaasPreview" type="button">View Allocation Status</button>
+    <button class="primary-btn" id="awaasPdf" type="button">📄 Download Report</button>
    </div>
+   <details style="margin-top:14px;background:#fff;border:1px solid #dbe7f0;border-radius:12px;padding:12px">
+    <summary style="cursor:pointer;font-weight:800;color:#075293">Participant &amp; Allocation Management</summary>
+    <p class="note">Routine controls are grouped here. Existing backend actions and safeguards are retained.</p>
+    <div class="grid">
+     <div class="section blue" style="margin:0">
+      <h4 style="margin-top:0">📥 Import Participants</h4>
+      <p class="note">Select the original PRT Music and TGT AE workbooks together. Source files remain unchanged.</p>
+      <input id="awaasSourceFiles" type="file" accept=".xlsx,.xls" multiple>
+      <div class="actions">
+       <button class="primary-btn" id="awaasImportSources" type="button">Import Workbooks</button>
+       <button class="primary-btn" id="awaasMarkLocals" type="button">Verify Local Participants</button>
+      </div>
+     </div>
+     <div class="section orange" style="margin:0">
+      <h4 style="margin-top:0">🛏️ Room Allocation</h4>
+      <p class="note">Preview records before making changes. Release affects verified local participants only; automatic allocation is a separate action.</p>
+      <div class="actions">
+       <button class="primary-btn" id="awaasReleaseLocals" type="button">Release Local Allotments</button>
+       <button class="primary-btn" id="awaasRunAuto" type="button">Allocate Rooms</button>
+      </div>
+     </div>
+    </div>
+   </details>
    <p class="note" id="awaasImportStatus" aria-live="polite"></p>
   </div>
   <h4>Room Register & Occupancy</h4>
   <div style="overflow-x:auto"><table id="awaasRoomsTable" style="width:100%;border-collapse:collapse;font-size:13px"></table></div>
-  <h4 style="margin-top:20px">Manual Room Allotment</h4>
-  <p class="note">Enter a verified participant and an available bed. The backend prevents duplicate active bed assignments.</p>
-  <div class="grid">
-   <div><label>Participant Name</label><input id="awaasPName" placeholder="Full name"></div>
-   <div><label>Participant ID</label><input id="awaasPId" placeholder="Optional; auto-generated if blank"></div>
-   <div><label>Building</label><select id="awaasBuilding"><option>A1</option><option>A2</option><option>A3</option></select></div>
-   <div><label>Floor</label><select id="awaasFloor"><option>Ground</option><option>First</option><option>Second</option><option>Third</option></select></div>
-   <div><label>Room</label><select id="awaasRoom"><option>1</option><option>2</option><option>3</option></select></div>
-   <div><label>Bed</label><select id="awaasBed"><option>1</option><option>2</option><option>3</option></select></div>
-  </div>
-  <div class="actions"><button class="primary-btn" id="awaasSaveAllotment" type="button">Save Manual Allotment</button></div>
+  <details style="margin-top:18px;background:#fff;border:1px solid #dbe7f0;border-radius:12px;padding:12px">
+   <summary style="cursor:pointer;font-weight:800;color:#075293">Advanced: Manual Room Allotment</summary>
+   <p class="note">For authorised corrections only. The backend prevents duplicate active bed assignments.</p>
+   <div class="grid">
+    <div><label>Participant Name</label><input id="awaasPName" placeholder="Full name"></div>
+    <div><label>Participant ID</label><input id="awaasPId" placeholder="Optional; auto-generated if blank"></div>
+    <div><label>Building</label><select id="awaasBuilding"><option>A1</option><option>A2</option><option>A3</option></select></div>
+    <div><label>Floor</label><select id="awaasFloor"><option>Ground</option><option>First</option><option>Second</option><option>Third</option></select></div>
+    <div><label>Room</label><select id="awaasRoom"><option>1</option><option>2</option><option>3</option></select></div>
+    <div><label>Bed</label><select id="awaasBed"><option>1</option><option>2</option><option>3</option></select></div>
+   </div>
+   <div class="actions"><button class="primary-btn" id="awaasSaveAllotment" type="button">Save Manual Allotment</button></div>
+  </details>
   <p class="note" id="awaasAdminActionStatus" aria-live="polite"></p>
  </div>
  <div class="stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px">
