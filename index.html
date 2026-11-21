@@ -687,6 +687,7 @@ n>
    <div class="actions" style="margin:0;flex-wrap:wrap">
     <button class="primary-btn" id="awaasRefreshLive" type="button">↻ Refresh Dashboard</button>
     <button class="primary-btn" id="awaasPreview" type="button">View Allocation Status</button>
+    <button class="primary-btn" id="awaasRepairProtected" type="button">Repair Manisha Protected Room</button>
     <button class="primary-btn" id="awaasPdf" type="button">📄 Download Report</button>
    </div>
    <details style="margin-top:14px;background:#fff;border:1px solid #dbe7f0;border-radius:12px;padding:12px">
@@ -2723,6 +2724,24 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       if(duplicateDetails) detailText+=' DUPLICATE NAMES: '+duplicateDetails+'.';
       status.textContent='NON-DESTRUCTIVE PREVIEW — '+c.totalRecords+' records; '+c.localParticipants+' Local Participants; '+c.eligibleParticipants+' eligible; '+c.activeAllotments+' active allotments; '+unassigned+' eligible participants unallotted. '+(issues.length?'Findings: '+issues.join('; ')+'.':'No listed reconciliation issues.')+detailText+' No data was changed.';
     });
+  });
+  document.getElementById('awaasRepairProtected').addEventListener('click',async function(){
+    const status=document.getElementById('awaasImportStatus');
+    if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
+    status.textContent='Preparing a non-destructive relocation preview for the two named occupants…';
+    try{
+      const preview=await apiPost({action:'repairProtectedRoom',token:adminToken});
+      if(!preview.success) throw new Error(preview.error||'Preview failed');
+      if(!preview.previewOnly || !(preview.changes||[]).length) throw new Error('The backend did not return a valid preview. No records changed.');
+      const details=preview.changes.map(x=>x.name+' ('+x.participantId+')\nFROM: '+x.from+'\nTO: '+x.to).join('\n\n');
+      status.textContent='PROTECTED ROOM REPAIR PREVIEW —\n'+details+'\n\nNo data has been changed.';
+      if(!confirm('Only these two allotment rows will be moved. All other allotments will remain unchanged.\n\n'+details+'\n\nApply these exact moves?')) return;
+      status.textContent='Applying the two verified moves…';
+      const result=await apiPost({action:'repairProtectedRoom',token:adminToken,confirm:'MOVE_ONLY_THE_TWO_NAMED_OCCUPANTS'});
+      if(!result.success) throw new Error(result.error||'Repair failed');
+      status.textContent='REPAIR COMPLETE — '+result.moved+' allotments moved. Other allotments were not changed. Now run View Allocation Status to verify.';
+      apiGet('summary',showAdmin);
+    }catch(e){status.textContent='Protected-room repair stopped: '+e.message+' No unverified changes were made.';}
   });
   document.getElementById('awaasRunAuto').addEventListener('click',async function(){
     const status=document.getElementById('awaasImportStatus');
