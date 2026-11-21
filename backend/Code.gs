@@ -154,33 +154,44 @@ function doPost(e) {
       const sh = ss.getSheetByName('Participants');
       if (!sh) throw new Error('Participants sheet is missing from the AawasSetu database.');
       if (sh.getLastRow() < 1) throw new Error('Participants sheet has no header row. Import participant workbooks first.');
-      // Repair missing headers safely before using their column indexes.
-      let lastCol = Math.max(sh.getLastColumn(), 1);
-      let headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(v => String(v).trim());
-      ['Name','School','Participation Category'].forEach(header => {
-        if (headers.indexOf(header) === -1) {
-          lastCol += 1;
-          sh.getRange(1, lastCol).setValue(header);
-          headers.push(header);
-        }
-      });
-      const nameCol = headers.indexOf('Name');
-      const schoolCol = headers.indexOf('School');
-      const categoryCol = headers.indexOf('Participation Category');
-      if (nameCol < 0 || schoolCol < 0 || categoryCol < 0) throw new Error('Could not locate required participant columns. No participant records were changed.');
-      const values = sh.getDataRange().getValues();
-      let marked = 0;
-      const names = [];
-      for (let i = 1; i < values.length; i++) {
-        const p = {name: values[i][nameCol], school: values[i][schoolCol]};
-        if (isLocalParticipant_(p) && String(values[i][categoryCol] || '') !== 'Local Participants') {
-          sh.getRange(i + 1, categoryCol + 1).setValue('Local Participants');
-          marked++;
-          names.push(String(values[i][nameCol]));
-        }
+
+      // Find the last populated header cell, then append the missing category header.
+      const headerWidth = Math.max(sh.getLastColumn(), 1);
+      const headerRow = sh.getRange(1, 1, 1, headerWidth).getValues()[0].map(v => String(v || '').trim());
+      let nameCol = headerRow.indexOf('Name');
+      let schoolCol = headerRow.indexOf('School');
+      let categoryCol = headerRow.indexOf('Participation Category');
+      if (nameCol < 0 || schoolCol < 0) {
+        throw new Error('Required Name or School header is missing. No participant data was changed.');
       }
-      audit_(ss, 'ADMIN', 'MARK_LOCAL_PARTICIPANTS', 'PARTICIPANTS', 'MUMBAI_CITY', JSON.stringify({marked:marked,names:names}));
-      return json_({success:true,marked:marked,names:names});
+      if (categoryCol < 0) {
+        let lastHeader = headerRow.length - 1;
+        while (lastHeader >= 0 && !headerRow[lastHeader]) lastHeader--;
+        categoryCol = lastHeader + 1;
+        sh.getRange(1, categoryCol + 1).setValue('Participation Category');
+      }
+
+      const lastRow = sh.getLastRow();
+      if (lastRow < 2) return json_({success:true,marked:0,eligible:0,total:0,names:[],message:'No participant rows found.'});
+      const width = Math.max(sh.getLastColumn(), categoryCol + 1);
+      const values = sh.getRange(2, 1, lastRow - 1, width).getValues();
+      const categoryValues = [];
+      const localNames = [];
+      let eligibleCount = 0;
+      values.forEach(row => {
+        const person = {name:row[nameCol], school:row[schoolCol]};
+        const oldCategory = String(row[categoryCol] || '').trim();
+        const local = isLocalParticipant_(person) || oldCategory.toLowerCase() === 'local participants';
+        const category = local ? 'Local Participants' : (oldCategory || 'Accommodation Required');
+        if (local) localNames.push(String(row[nameCol] || ''));
+        else eligibleCount++;
+        categoryValues.push([category]);
+      });
+      // Single-column bulk write; no allotment records are modified.
+      sh.getRange(2, categoryCol + 1, categoryValues.length, 1).setValues(categoryValues);
+      audit_(ss, 'ADMIN', 'REPAIR_PARTICIPANT_CATEGORIES', 'PARTICIPANTS', 'BATCH',
+        JSON.stringify({total:categoryValues.length,local:localNames.length,eligible:eligibleCount,localNames:localNames}));
+      return json_({success:true,marked:localNames.length,localParticipants:localNames.length,eligible:eligibleCount,total:categoryValues.length,names:localNames,message:'Participant categories repaired. Existing allotments were not changed.'});
     }
     if (action === 'autoAllocate') {
       const result = autoAllocate_(db_());
