@@ -358,7 +358,7 @@ function autoAllocate_(ss) {
   }
   function placeGroup(group,g,preferGround){
     const school=String(group[0].School||'');
-    let candidates=rooms.filter(r=>freeBeds(r)>=group.length&&(!currentGender(r)||currentGender(r)===g));
+    let candidates=rooms.filter(r=>freeBeds(r)>=group.length&&(!currentGender(r)||currentGender(r)===g)&&(!group.some(rp)||currentCount(r)===0));
     candidates.sort((a,b)=>{
       const ag=preferGround&&a.Floor==='Ground'?0:1, bg=preferGround&&b.Floor==='Ground'?0:1;
       const as=school&&roomMap[roomKey(a)]&&roomMap[roomKey(a)].some(x=>String(x.person.School||'')===school)?0:1;
