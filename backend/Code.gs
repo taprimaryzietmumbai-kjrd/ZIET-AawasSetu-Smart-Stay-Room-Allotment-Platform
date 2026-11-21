@@ -17,6 +17,15 @@ const DB_PROPERTY = 'AWAASSETU_DATABASE_ID';
 const PIN_HASH_PROPERTY = 'AWAASSETU_ADMIN_PIN_SHA256';
 const TOKEN_PROPERTY_PREFIX = 'AWAASSETU_TOKEN_';
 
+// Explicitly exclude the two Mumbai City school participants from accommodation.
+function isLocalParticipant_(p) {
+  const name = String(p.name || p.Name || '').toLowerCase().replace(/[^a-z]/g, '');
+  const school = String(p.school || p.School || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return name === 'nikhilkesharwani' || name === 'sachinhpardeshi' ||
+    /kendriyavidyalaya(no2|number2)colaba/.test(school) ||
+    /kendriyavidyalayaiitpowai/.test(school);
+}
+
 const SHEETS = {
   Rooms: ['Building','Floor','Room','Beds','AC','Geyser','Attached Washroom','Facility','Allotable','Status'],
   Participants: ['Participant ID','Name','Designation','School','Region','Gender','DOB','Employee Code','Role','Preference','Special Requirement','Verification Status','Source','Participation Category'],
@@ -119,7 +128,7 @@ function doPost(e) {
       list.forEach((p, i) => {
         if (!String(p.name || '').trim()) return;
         const id = String(p.id || (String(p.source || 'IMPORT') + '-' + (p.employeeCode || i+1)));
-        const category = p.participationCategory === 'Local Participants' ? 'Local Participants' : 'Accommodation Required';
+        const category = (p.participationCategory === 'Local Participants' || isLocalParticipant_(p)) ? 'Local Participants' : 'Accommodation Required';
         if (category === 'Local Participants') local++;
         upsert_(sh, 'Participant ID', id, {'Participant ID':id,'Name':p.name,'Designation':p.designation||'','School':p.school||'','Region':p.region||'','Gender':p.gender||'','DOB':p.dob||'','Employee Code':p.employeeCode||'','Role':p.role||'Participant','Preference':p.preference||'','Special Requirement':p.specialRequirement||'','Verification Status':p.verificationStatus||'Imported','Source':p.source||'Bulk workbook import','Participation Category':category});
         imported++;
