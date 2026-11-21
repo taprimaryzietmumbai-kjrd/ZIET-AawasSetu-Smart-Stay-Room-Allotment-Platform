@@ -2647,22 +2647,21 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
     status.textContent='Checking existing allotments without changing any records…';
     apiGet('allocationPreview',function(r){
       if(!r||!r.success){status.textContent='Preview unavailable: '+((r&&r.error)||'Unknown error');return;}
-      const issues=[];
-      if(r.activeAllotments) issues.push(r.activeAllotments+' existing active allotments');
-      if(r.localParticipantsAllotted) issues.push(r.localParticipantsAllotted+' Local Participants allotted');
-      if(r.duplicateParticipantIds) issues.push(r.duplicateParticipantIds+' duplicate participant IDs');
-      if(r.duplicateActiveAllotments) issues.push(r.duplicateActiveAllotments+' duplicate active allotment records');
-      if(r.orphanAllotments) issues.push(r.orphanAllotments+' allotments without matching participant records');
-      if(r.overCapacityRooms) issues.push(r.overCapacityRooms+' over-capacity rooms');
-      if(r.genderConflictRooms) issues.push(r.genderConflictRooms+' gender-conflict rooms');
-      const unassigned=r.unallottedParticipants||0;
-      status.textContent='NON-DESTRUCTIVE PREVIEW — '+(r.totalParticipants||0)+' participant records; '+(r.localParticipants||0)+' Local Participants; '+(r.eligibleParticipants||0)+' eligible; '+r.activeAllotments+' active allotments; '+unassigned+' eligible participants currently unallotted. '+(issues.length?'Findings: '+issues.join('; ')+'.':'No listed reconciliation issues.')+' No data was changed.';
+      const c=r.counts||{}, issues=[];
+      if((r.localParticipantsAllotted||[]).length) issues.push((r.localParticipantsAllotted||[]).length+' Local Participants have active allotments');
+      if((r.duplicateParticipantIds||[]).length) issues.push((r.duplicateParticipantIds||[]).length+' duplicate participant IDs');
+      if((r.duplicateActiveAllotments||[]).length) issues.push((r.duplicateActiveAllotments||[]).length+' participants have multiple active allotments');
+      if((r.orphanAllotments||[]).length) issues.push((r.orphanAllotments||[]).length+' allotments lack an eligible participant');
+      if((r.overCapacityRooms||[]).length) issues.push((r.overCapacityRooms||[]).length+' over-capacity rooms');
+      if((r.genderConflictRooms||[]).length) issues.push((r.genderConflictRooms||[]).length+' mixed-gender rooms');
+      const unassigned=c.unallottedEligible||0;
+      status.textContent='NON-DESTRUCTIVE PREVIEW — '+c.totalRecords+' records; '+c.localParticipants+' Local Participants; '+c.eligibleParticipants+' eligible; '+c.activeAllotments+' active allotments; '+unassigned+' eligible participants unallotted. '+(issues.length?'Findings: '+issues.join('; ')+'.':'No listed reconciliation issues.')+' No data was changed.';
     });
   });
   document.getElementById('awaasRunAuto').addEventListener('click',async function(){
     const status=document.getElementById('awaasImportStatus');
     if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
-    if(!confirm('Run automatic room allocation for all eligible participants? Existing active allotments must first be released.')) return;
+    if(!confirm('Run automatic room allocation for all eligible participants? Existing active allotments will be preserved; only unallotted eligible participants will be added.')) return;
     status.textContent='Running rule-based allocation…';
     try{const r=await apiPost({action:'autoAllocate',token:adminToken});if(!r.success)throw new Error(r.error||'Allocation failed');status.textContent='Allocation complete: '+r.assigned+' people in '+r.roomsUsed+' rooms. Local Participants excluded: '+r.localParticipantsExcluded+'.';apiGet('summary',showAdmin);}
     catch(e){status.textContent='Allocation failed: '+e.message;}
