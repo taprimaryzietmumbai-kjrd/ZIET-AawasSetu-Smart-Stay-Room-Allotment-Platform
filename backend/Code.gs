@@ -136,6 +136,26 @@ function doPost(e) {
       audit_(db_(),'ADMIN','BULK_IMPORT','PARTICIPANTS','BATCH',JSON.stringify({imported:imported,local:local}));
       return json_({success:true,imported:imported,localParticipants:local,eligible:imported-local});
     }
+    if (action === 'markLocalParticipants') {
+      const sh = db_().getSheetByName('Participants');
+      const values = sh.getDataRange().getValues();
+      const headers = values[0].map(String);
+      const nameCol = headers.indexOf('Name');
+      const schoolCol = headers.indexOf('School');
+      const categoryCol = headers.indexOf('Participation Category');
+      let marked = 0;
+      const names = [];
+      for (let i = 1; i < values.length; i++) {
+        const p = {name: values[i][nameCol], school: values[i][schoolCol]};
+        if (isLocalParticipant_(p) && String(values[i][categoryCol]) !== 'Local Participants') {
+          sh.getRange(i + 1, categoryCol + 1).setValue('Local Participants');
+          marked++;
+          names.push(String(values[i][nameCol]));
+        }
+      }
+      audit_(db_(), 'ADMIN', 'MARK_LOCAL_PARTICIPANTS', 'PARTICIPANTS', 'MUMBAI_CITY', JSON.stringify({marked:marked,names:names}));
+      return json_({success:true,marked:marked,names:names});
+    }
     if (action === 'autoAllocate') {
       const result = autoAllocate_(db_());
       return json_({success:true, ...result});
