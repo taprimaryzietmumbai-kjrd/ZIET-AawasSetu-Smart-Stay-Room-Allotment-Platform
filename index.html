@@ -2586,9 +2586,9 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
       ?'AawasSetu database is reachable. Enter your private administrator PIN to open the management dashboard.'
       :'Backend responded, but the database is not initialized. Run setupAawasSetu() in Apps Script.';
     document.getElementById('awaasAdminControls').style.display=ok?'block':'none';
-    document.getElementById('awaasLiveTitle').textContent=ok?'AawasSetu database reachable — latest backend deployment required.':'Live allotment is not connected yet.';
+    document.getElementById('awaasLiveTitle').textContent=ok?'AawasSetu database connected — sign in to view live allotments.':'Live allotment is not connected yet.';
     document.getElementById('awaasLiveMessage').textContent=ok
-      ?'The database is reachable. Deploy the latest backend/Code.gs from the AawasSetu repository to activate bulk import, automatic allocation, live room occupancy and PDF reporting.'
+      ?'Database connection verified. Sign in to load live room occupancy and the participant-wise final allotment report. Use Download Report in the Administrator Dashboard to export the PDF.'
       :'The database service could not confirm readiness. Check the Apps Script deployment and database setup.';
   };
   const script=document.createElement('script');
