@@ -2577,26 +2577,26 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
   }
   function escA(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function localMumbaiSchool(school){
-    const s=String(school||'').toLowerCase().replace(/\\s+/g,' ');
-    return /kendriya vidyalaya\\s*(no\\.?\\s*2|number\\s*2)\\s*colaba/.test(s) ||
-           /kendriya vidyalaya\\s*iit\\s*powai/.test(s);
+    const s=String(school||'').toLowerCase().replace(/\s+/g,' ');
+    return /kendriya vidyalaya\s*(no\.?\s*2|number\s*2)\s*colaba/.test(s) ||
+           /kendriya vidyalaya\s*iit\s*powai/.test(s);
   }
   function mapWorkbookRows(rows,source){
     return rows.filter(r=>String(r['Name of the Participant']||'').trim()).map((r,i)=>{
       const name=String(r['Name of the Participant']).trim();
       const school=String(r.School||'').trim();
       const isPrt=source==='PRT Music';
-      const role=isPrt ? (/^mridula\\s+nagda$/i.test(name)?'Resource Person':'Participant')
+      const role=isPrt ? (/^mridula\s+nagda$/i.test(name)?'Resource Person':'Participant')
                        : (/resource\\s*person/i.test(String(r.As||''))?'Resource Person':'Participant');
       const employee=String(r['Employee Code ']||r['Employee Code']||'').trim();
       const local=localMumbaiSchool(school);
-      const manisha=/^manisha\\s+vivek\\s+mahajan$/i.test(name);
+      const manisha=/^manisha\s+vivek\s+mahajan$/i.test(name);
       return {
         id:source.replace(/[^A-Za-z]/g,'')+'-'+(employee && employee!=='NaN'?employee.replace(/\\.0$/,''):(i+1)),
         name:name,designation:String(r.Designation||''),school:school,region:String(r.Region||''),
         gender:String(r.Gender||''),dob:String(r.DOB||''),employeeCode:employee,
         role:role,preference:manisha?'A1 Ground Floor Room 2; single occupancy':'',
-        specialRequirement:manisha?'Ground Floor Priority':'',
+        specialRequirement:(manisha || ['r d paraskar','santosh vishram nathe'].includes(name.toLowerCase()))?'Ground Floor Priority':'',
         participationCategory:local?'Local Participants':'Accommodation Required',
         source:source
       };
@@ -2644,13 +2644,13 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
     const c=data.capacity||{};
     document.getElementById('awaasAdminStats').innerHTML=[
       ['Allotable Rooms',c.rooms||35],['Allotable Beds',c.beds||105],
-      ['Participants',data.participants||0],['Occupied Beds',data.occupiedBeds||0]
+      ['Total Records',data.participants||0],['Local Participants',data.localParticipants||0],
+      ['Eligible Participants',data.eligibleParticipants||0],['Occupied Beds',data.occupiedBeds||0],
+      ['Available Beds',data.availableBeds==null?105:data.availableBeds],['Active Allotments',data.activeAllotments||0]
     ].map(x=>'<div class="stat"><b>'+escA(x[1])+'</b><span>'+escA(x[0])+'</span></div>').join('');
     const rooms=data.rooms||[];
-    const occupied=Number(data.occupiedBeds||0);
-    document.getElementById('awaasRoomsTable').innerHTML='<thead><tr>'+['Building','Floor','Room','Beds','Occupied','Status'].map(x=>'<th style="text-align:left;padding:8px;background:#eaf3fb">'+x+'</th>').join('')+'</tr></thead><tbody>'+rooms.map(r=>{
-      const n='—';
-      return '<tr>'+[r.Building,r.Floor,r.Room,r.Beds,n,r.Status].map(v=>'<td style="padding:7px;border-bottom:1px solid #dbe7f0">'+escA(v)+'</td>').join('')+'</tr>';
+    document.getElementById('awaasRoomsTable').innerHTML='<thead><tr>'+['Building','Floor','Room','Beds','Occupied','Available','Status'].map(x=>'<th style="text-align:left;padding:8px;background:#eaf3fb">'+x+'</th>').join('')+'</tr></thead><tbody>'+rooms.map(r=>{
+      return '<tr>'+[r.Building,r.Floor,r.Room,r.Beds,r.Occupied==null?0:r.Occupied,r.Available==null?r.Beds:r.Available,r.Status].map(v=>'<td style="padding:7px;border-bottom:1px solid #dbe7f0">'+escA(v)+'</td>').join('')+'</tr>';
     }).join('')+'</tbody>';
   }
   document.getElementById('awaasAdminLogin').addEventListener('click',function(){
