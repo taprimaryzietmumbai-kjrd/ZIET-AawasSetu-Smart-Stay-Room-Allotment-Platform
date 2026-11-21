@@ -688,6 +688,7 @@ n>
    <input id="awaasSourceFiles" type="file" accept=".xlsx,.xls" multiple>
    <div class="actions" style="margin-top:10px;flex-wrap:wrap">
     <button class="primary-btn" id="awaasImportSources" type="button">Import Selected Workbooks</button>
+    <button class="primary-btn" id="awaasMarkLocals" type="button">Correct Local Participant Marking</button>
     <button class="primary-btn" id="awaasPreview" type="button">Check Existing Allotments (Preview)</button>
     <button class="primary-btn" id="awaasRunAuto" type="button">Run Automatic Room Allocation</button>
     <button class="primary-btn" id="awaasRefreshLive" type="button">Refresh Live Occupancy</button>
@@ -2641,6 +2642,18 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
     }catch(e){status.textContent='Import failed: '+e.message;}
   }
   document.getElementById('awaasImportSources').addEventListener('click',importAwaasSources);
+  document.getElementById('awaasMarkLocals').addEventListener('click',async function(){
+    const status=document.getElementById('awaasImportStatus');
+    if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
+    if(!confirm('Mark Nikhil Kesharwani and Sachin H. Pardeshi as Local Participants? No room allotments will be changed.')) return;
+    status.textContent='Correcting Local Participant marking…';
+    try{
+      const r=await apiPost({action:'markLocalParticipants',token:adminToken});
+      if(!r.success) throw new Error(r.error||'Correction failed');
+      status.textContent='Local Participant marking corrected: '+r.marked+' record(s) updated. '+(r.names||[]).join(', ')+'. No allotments were changed.';
+      apiGet('summary',showAdmin);
+    }catch(e){status.textContent='Correction failed: '+e.message;}
+  });
   document.getElementById('awaasPreview').addEventListener('click',function(){
     const status=document.getElementById('awaasImportStatus');
     if(!adminToken){status.textContent='Administrator sign-in is required.';return;}
