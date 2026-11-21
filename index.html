@@ -97,6 +97,8 @@ button.action{border:0;border-radius:11px;padding:13px 19px;font-size:15px;font-
 #course, #family, #facilitation { display:none !important; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <header class="hero">
@@ -2575,6 +2577,7 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
 })();
 
   let adminToken='';
+  let awaasCurrentSummary=null;
   function apiPost(payload){
     return fetch(AWAASSETU_BACKEND_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)}).then(r=>r.json());
   }
@@ -2646,10 +2649,25 @@ const AWAASSETU_BACKEND_URL = "https://script.google.com/macros/s/AKfycbxTpwDHOp
     catch(e){status.textContent='Allocation failed: '+e.message;}
   });
   document.getElementById('awaasRefreshLive').addEventListener('click',function(){if(adminToken)apiGet('summary',showAdmin);});
-  document.getElementById('awaasPdf').addEventListener('click',function(){if(!adminToken){document.getElementById('awaasImportStatus').textContent='Sign in first to print the protected live dashboard.';return;}window.print();});
+  document.getElementById('awaasPdf').addEventListener('click',function(){
+    const status=document.getElementById('awaasImportStatus');
+    if(!adminToken || !awaasCurrentSummary){status.textContent='Sign in and refresh the live dashboard before exporting.';return;}
+    if(!window.jspdf || !window.jspdf.jsPDF){status.textContent='PDF library is still loading. Refresh and try again.';return;}
+    const data=awaasCurrentSummary, doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    doc.setFontSize(17);doc.text('ZIET AawasSetu — Live Room Allotment Report',14,15);
+    doc.setFontSize(9);doc.text('Generated: '+new Date().toLocaleString('en-IN'),14,22);
+    doc.text('Total records: '+(data.participants||0)+' | Local Participants: '+(data.localParticipants||0)+' | Eligible: '+(data.eligibleParticipants||0)+' | Allotted: '+(data.activeAllotments||0)+' | Occupied beds: '+(data.occupiedBeds||0)+' | Available beds: '+(data.availableBeds||0),14,28);
+    doc.autoTable({startY:34,head:[['Building','Floor','Room','Beds','Occupied','Available','Status']],body:(data.rooms||[]).map(r=>[r.Building,r.Floor,r.Room,r.Beds,r.Occupied||0,r.Available==null?r.Beds:r.Available,r.Status||'']),styles:{fontSize:7,cellPadding:1.8},headStyles:{fillColor:[7,82,147]}});
+    const allotments=(data.allotments||[]).slice().sort((a,b)=>String(a.Building+a.Floor+a.Room+a.Bed).localeCompare(String(b.Building+b.Floor+b.Room+b.Bed)));
+    doc.addPage('a4','landscape');doc.setFontSize(14);doc.text('Participant-wise Room & Bed Allotment',14,15);
+    doc.autoTable({startY:21,head:[['Participant','Building','Floor','Room','Bed','Status','Remarks']],body:allotments.map(a=>[a['Participant Name'],a.Building,a.Floor,a.Room,a.Bed,a['Allotment Status'],a.Remarks||'']),styles:{fontSize:7,cellPadding:1.5},headStyles:{fillColor:[7,82,147]},margin:{left:10,right:10}});
+    doc.save('ZIET-AawasSetu-Live-Room-Allotment.pdf');
+    status.textContent='PDF report generated from the current live database snapshot.';
+  });
 
   function showAdmin(data){
     if(!data || !data.success){document.getElementById('awaasAdminActionStatus').textContent=(data&&data.error)||'Could not load dashboard.';return;}
+    awaasCurrentSummary=data;
     document.getElementById('awaasAdminPanel').style.display='block';
     document.getElementById('awaasAdminWelcome').textContent='Administrator session active. Database records are live.';
     const c=data.capacity||{};
